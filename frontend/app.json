@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "FTMO Strategy",
+    "slug": "ftmo-strategy-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "ftmostrategy",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#000000"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.ftmo.strategyapp"
+    },
+    "android": {
+      "package": "com.ftmo.strategyapp"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": ["expo-router"],
+    "extra": {
+      "apiUrl": "http://localhost:8000"
+    }
+  }
+}
