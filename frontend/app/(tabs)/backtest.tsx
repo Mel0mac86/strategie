@@ -1,6 +1,7 @@
-import React, { useState } from "react";
-import { ScrollView, Text, View, StyleSheet, TextInput, Alert, Platform } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import React, { useCallback, useState } from "react";
+import { ScrollView, Text, View, StyleSheet, TextInput, Alert, Platform, Pressable } from "react-native";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
 import { Badge, Button, Card, ChipRow, SectionLabel, Stat } from "@/components/ui";
@@ -8,6 +9,23 @@ import { EquityChart } from "@/components/EquityChart";
 import { colors, fonts, hardBorder, space, type as t } from "@/theme";
 import { TIMEFRAMES, generateBars, parseCsv, Bar } from "@/backtest/data";
 import { runBacktest, BacktestResult } from "@/backtest/engine";
+import { storage } from "@/utils/storage";
+
+const SAVED_KEY = "store:backtests";
+type SavedBacktest = {
+  id: string;
+  date: string;
+  strategyType: string;
+  timeframe: string;
+  asset: string;
+  source: string;
+  netPnlPct: number;
+  winRate: number;
+  profitFactor: number;
+  maxDrawdownPct: number;
+  trades: number;
+  ftmoPassed: boolean;
+};
 
 const STRATEGIES = [
   { label: "Trend + Pullback", value: "trend_pullback" },
@@ -50,12 +68,51 @@ export default function BacktestScreen() {
   const [phase, setPhase] = useState("phase1");
   const [riskPct, setRiskPct] = useState(params.risk_pct || "1");
   const [rr, setRr] = useState("2");
+  const [cost, setCost] = useState("5");
   const [source, setSource] = useState<"sim" | "csv">("sim");
   const [bars, setBars] = useState("1500");
   const [csv, setCsv] = useState("");
   const [fileName, setFileName] = useState("");
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [running, setRunning] = useState(false);
+  const [saved, setSaved] = useState<SavedBacktest[]>([]);
+
+  const loadSaved = useCallback(async () => {
+    setSaved((await storage.get<SavedBacktest[]>(SAVED_KEY)) || []);
+  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadSaved();
+    }, [loadSaved])
+  );
+
+  async function saveResult() {
+    if (!result) return;
+    const entry: SavedBacktest = {
+      id: Date.now().toString(36),
+      date: new Date().toISOString(),
+      strategyType,
+      timeframe,
+      asset,
+      source: source === "csv" ? "CSV" : "Simulato",
+      netPnlPct: result.netPnlPct,
+      winRate: result.winRate,
+      profitFactor: result.profitFactor,
+      maxDrawdownPct: result.maxDrawdownPct,
+      trades: result.trades,
+      ftmoPassed: result.ftmoPassed,
+    };
+    const next = [entry, ...saved].slice(0, 50);
+    setSaved(next);
+    await storage.set(SAVED_KEY, next);
+    Alert.alert("Salvato", "Risultato aggiunto allo storico backtest.");
+  }
+
+  async function deleteSaved(id: string) {
+    const next = saved.filter((s) => s.id !== id);
+    setSaved(next);
+    await storage.set(SAVED_KEY, next);
+  }
 
   async function pickFile() {
     try {
@@ -118,6 +175,7 @@ export default function BacktestScreen() {
           rr: Number(rr) || 2,
           slAtrMult: 1.5,
           maxDailyTrades: 5,
+          costPctOfRisk: Number(cost) || 0,
         });
         setResult(res);
       } catch (e: any) {
@@ -161,6 +219,13 @@ export default function BacktestScreen() {
             <TextInput style={styles.input} value={rr} onChangeText={setRr} keyboardType="numeric" />
           </View>
         </View>
+
+        <SectionLabel>Costi per trade (% del rischio)</SectionLabel>
+        <TextInput style={styles.input} value={cost} onChangeText={setCost} keyboardType="numeric" />
+        <Text style={styles.hint}>
+          Approssima spread + commissioni sottratti a ogni trade (es. 5% = 0,05R di costo per
+          operazione). Penalizza correttamente le strategie con molti trade.
+        </Text>
       </Card>
 
       <Card>
@@ -217,6 +282,43 @@ export default function BacktestScreen() {
       />
 
       {result && <Results res={result} accountSize={Number(accountSize)} />}
+      {result && (
+        <Button
+          title="💾 Salva risultato nello storico"
+          variant="secondary"
+          onPress={saveResult}
+          style={{ marginTop: space.md }}
+        />
+      )}
+
+      {saved.length > 0 && (
+        <View style={{ marginTop: space.xl }}>
+          <SectionLabel>Backtest salvati ({saved.length})</SectionLabel>
+          {saved.map((s) => (
+            <View key={s.id} style={styles.savedRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.savedTitle}>
+                  {STRATEGIES.find((x) => x.value === s.strategyType)?.label || s.strategyType} ·{" "}
+                  {s.timeframe} · {s.asset}
+                </Text>
+                <Text style={styles.savedMeta}>
+                  {new Date(s.date).toLocaleDateString("it-IT")} · {s.source} · {s.trades} trade
+                </Text>
+                <Text style={styles.savedMetrics}>
+                  <Text style={{ color: s.netPnlPct >= 0 ? colors.green : colors.red, fontWeight: "900" }}>
+                    {s.netPnlPct >= 0 ? "+" : ""}{s.netPnlPct}%
+                  </Text>{" "}
+                  · WR {s.winRate}% · PF {s.profitFactor} · DD {s.maxDrawdownPct}%{" "}
+                  · {s.ftmoPassed ? "✓ FTMO" : "✕ FTMO"}
+                </Text>
+              </View>
+              <Pressable hitSlop={10} onPress={() => deleteSaved(s.id)} style={{ padding: space.sm }}>
+                <Ionicons name="trash-outline" size={18} color={colors.red} />
+              </Pressable>
+            </View>
+          ))}
+        </View>
+      )}
       <View style={{ height: 40 }} />
     </ScrollView>
   );
@@ -292,6 +394,10 @@ const styles = StyleSheet.create({
   csvInput: { height: 120, textAlignVertical: "top", fontFamily: fonts.mono, fontSize: 12, fontWeight: "400" },
   hint: { ...t.small, color: colors.muted, marginTop: space.sm, lineHeight: 17 },
   fileName: { ...t.small, color: colors.green, fontWeight: "700", marginTop: space.sm },
+  savedRow: { flexDirection: "row", alignItems: "center", backgroundColor: colors.white, ...hardBorder, padding: space.md, marginBottom: space.sm },
+  savedTitle: { ...t.h3, color: colors.black },
+  savedMeta: { ...t.label, color: colors.muted, marginTop: 2 },
+  savedMetrics: { ...t.small, color: colors.ink, marginTop: 4 },
   verdict: { ...hardBorder, padding: space.lg, marginBottom: space.lg },
   verdictTxt: { ...t.h2, color: colors.white },
   verdictSub: { ...t.small, color: colors.white, marginTop: 4, opacity: 0.9 },

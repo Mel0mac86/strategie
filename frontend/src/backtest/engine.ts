@@ -10,6 +10,7 @@ export type BacktestParams = {
   rr: number; // risk:reward (TP = SL * RR)
   slAtrMult: number; // SL = ATR * mult
   maxDailyTrades: number;
+  costPctOfRisk?: number; // costi (spread+commissioni) per trade, in % del rischio
 };
 
 export type BTTrade = {
@@ -179,7 +180,9 @@ export function runBacktest(bars: Bar[], p: BacktestParams): BacktestResult {
       rMult = ((sig === "long" ? lastClose - entry : entry - lastClose) / slDist);
     }
 
-    const pnl = riskAmount * rMult;
+    // costi di transazione (spread+commissioni) come frazione del rischio per trade
+    const cost = riskAmount * ((p.costPctOfRisk ?? 0) / 100);
+    const pnl = riskAmount * rMult - cost;
     balance += pnl;
     tradesToday++;
     trades.push({ index: i + 1, dir: sig, entry, exit: exitPrice, rMultiple: rMult, pnl });
