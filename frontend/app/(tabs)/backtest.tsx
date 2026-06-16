@@ -1,6 +1,8 @@
 import React, { useState } from "react";
-import { ScrollView, Text, View, StyleSheet, TextInput, Alert } from "react-native";
+import { ScrollView, Text, View, StyleSheet, TextInput, Alert, Platform } from "react-native";
 import { useLocalSearchParams } from "expo-router";
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system";
 import { Badge, Button, Card, ChipRow, SectionLabel, Stat } from "@/components/ui";
 import { EquityChart } from "@/components/EquityChart";
 import { colors, fonts, hardBorder, space, type as t } from "@/theme";
@@ -51,8 +53,41 @@ export default function BacktestScreen() {
   const [source, setSource] = useState<"sim" | "csv">("sim");
   const [bars, setBars] = useState("1500");
   const [csv, setCsv] = useState("");
+  const [fileName, setFileName] = useState("");
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [running, setRunning] = useState(false);
+
+  async function pickFile() {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: ["text/csv", "text/comma-separated-values", "application/vnd.ms-excel", "text/plain", "*/*"],
+        copyToCacheDirectory: true,
+      });
+      if (res.canceled || !res.assets?.length) return;
+      const asset = res.assets[0];
+      let text = "";
+      if (Platform.OS === "web") {
+        const r = await fetch(asset.uri);
+        text = await r.text();
+      } else {
+        text = await FileSystem.readAsStringAsync(asset.uri);
+      }
+      const parsed = parseCsv(text);
+      if (parsed.length < 60) {
+        Alert.alert(
+          "File non valido",
+          `"${asset.name}" contiene solo ${parsed.length} barre riconosciute. Servono almeno ~250 barre OHLC.`
+        );
+        return;
+      }
+      setCsv(text);
+      setSource("csv");
+      setFileName(asset.name || "file.csv");
+      Alert.alert("File caricato", `${asset.name}: ${parsed.length} barre riconosciute.`);
+    } catch (e: any) {
+      Alert.alert("Errore", e?.message || "Impossibile leggere il file.");
+    }
+  }
 
   function run() {
     setRunning(true);
@@ -149,18 +184,27 @@ export default function BacktestScreen() {
           </>
         ) : (
           <>
-            <SectionLabel>Incolla CSV OHLC</SectionLabel>
+            <Button title="📂 Carica file .csv" variant="secondary" onPress={pickFile} />
+            {fileName ? (
+              <Text style={styles.fileName}>✓ {fileName} caricato</Text>
+            ) : null}
+            <View style={{ height: space.md }} />
+            <SectionLabel>…oppure incolla il CSV OHLC</SectionLabel>
             <TextInput
               style={[styles.input, styles.csvInput]}
               value={csv}
-              onChangeText={setCsv}
+              onChangeText={(v) => {
+                setCsv(v);
+                if (fileName) setFileName("");
+              }}
               multiline
               placeholder={"AAAA.MM.GG,HH:MM,open,high,low,close,volume\noppure: date,open,high,low,close"}
               placeholderTextColor={colors.muted}
             />
             <Text style={styles.hint}>
-              In MT4: Strumenti → Centro Storia → esporta, oppure incolla un CSV da TradingView.
-              Riconosce header o formato MT4; accetta anche una sola colonna di prezzi di chiusura.
+              Carica un file .csv (su iPhone dall'app File) oppure incollalo. In MT4: Strumenti →
+              Centro Storia → Esporta; va bene anche un CSV da TradingView. Riconosce header o
+              formato MT4; accetta anche una sola colonna di prezzi di chiusura.
             </Text>
           </>
         )}
@@ -247,6 +291,7 @@ const styles = StyleSheet.create({
   },
   csvInput: { height: 120, textAlignVertical: "top", fontFamily: fonts.mono, fontSize: 12, fontWeight: "400" },
   hint: { ...t.small, color: colors.muted, marginTop: space.sm, lineHeight: 17 },
+  fileName: { ...t.small, color: colors.green, fontWeight: "700", marginTop: space.sm },
   verdict: { ...hardBorder, padding: space.lg, marginBottom: space.lg },
   verdictTxt: { ...t.h2, color: colors.white },
   verdictSub: { ...t.small, color: colors.white, marginTop: 4, opacity: 0.9 },
