@@ -22,8 +22,8 @@ ASSET_LABELS = {
 
 STYLE_LABELS = {
     "scalping": "Scalping",
-    "intraday": "Intraday",
-    "swing": "Swing",
+    "intraday": "Day Trading",
+    "swing": "Swing Trading",
 }
 
 STRATEGY_LABELS = {

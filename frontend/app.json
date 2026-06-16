@@ -6,8 +6,11 @@
     "orientation": "portrait",
     "scheme": "ftmostrategy",
     "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
     "newArchEnabled": true,
     "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
       "backgroundColor": "#000000"
     },
     "assetBundlePatterns": ["**/*"],
@@ -16,11 +19,16 @@
       "bundleIdentifier": "com.ftmo.strategyapp"
     },
     "android": {
-      "package": "com.ftmo.strategyapp"
+      "package": "com.ftmo.strategyapp",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#000000"
+      }
     },
     "web": {
       "bundler": "metro",
-      "output": "single"
+      "output": "static",
+      "favicon": "./assets/favicon.png"
     },
     "plugins": ["expo-router"],
     "extra": {

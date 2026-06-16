@@ -119,44 +119,102 @@ export type Challenge = {
   progress?: ChallengeProgress;
 };
 
+// ---------- Fallback locale (PWA standalone su iPhone) ----------
+// Import dinamico per evitare cicli: localStore importa i tipi da questo file.
+import { localStore } from "@/localStore";
+
+/**
+ * Modalità "solo locale": forza l'uso dello store sul dispositivo senza tentare
+ * la rete. Attivabile con EXPO_PUBLIC_LOCAL_ONLY=1 (consigliato per la PWA iPhone).
+ */
+const LOCAL_ONLY =
+  String(process.env.EXPO_PUBLIC_LOCAL_ONLY || "").trim() === "1";
+
+/** Esegue la chiamata di rete; se fallisce (o in LOCAL_ONLY) usa il fallback locale. */
+async function withFallback<T>(net: () => Promise<T>, local: () => Promise<T>): Promise<T> {
+  if (LOCAL_ONLY) return local();
+  try {
+    return await net();
+  } catch {
+    return local();
+  }
+}
+
 // ---------- Endpoints ----------
 export const api = {
   baseUrl: API_URL,
+  localOnly: LOCAL_ONLY,
 
   generateStrategy: (body: Record<string, any>) =>
-    request<Strategy>("/api/strategy/generate", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
-  listStrategies: () => request<Strategy[]>("/api/strategy"),
-  getStrategy: (id: string) => request<Strategy>(`/api/strategy/${id}`),
+    // In modalità locale, o senza backend, genera direttamente sul dispositivo.
+    body.mode === "local"
+      ? localStore.generateStrategy(body)
+      : withFallback(
+          () =>
+            request<Strategy>("/api/strategy/generate", {
+              method: "POST",
+              body: JSON.stringify(body),
+            }),
+          () => localStore.generateStrategy(body)
+        ),
+  listStrategies: () =>
+    withFallback(() => request<Strategy[]>("/api/strategy"), () => localStore.listStrategies()),
+  getStrategy: (id: string) =>
+    withFallback(() => request<Strategy>(`/api/strategy/${id}`), () => localStore.getStrategy(id)),
   deleteStrategy: (id: string) =>
-    request<{ deleted: boolean }>(`/api/strategy/${id}`, { method: "DELETE" }),
+    withFallback(
+      () => request<{ deleted: boolean }>(`/api/strategy/${id}`, { method: "DELETE" }),
+      () => localStore.deleteStrategy(id)
+    ),
   setScore: (id: string, score: number) =>
-    request(`/api/strategy/${id}/score`, {
-      method: "PATCH",
-      body: JSON.stringify({ score }),
-    }),
+    withFallback(
+      () =>
+        request(`/api/strategy/${id}/score`, {
+          method: "PATCH",
+          body: JSON.stringify({ score }),
+        }),
+      () => localStore.setScore(id, score)
+    ),
   strategyToEa: (body: Record<string, any>) =>
-    request<string>("/api/strategy/ea", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
-
-  lotSize: (body: Record<string, any>) =>
-    request<{ lots: number; micro_lots: number; risk_amount: number; pip_value_per_lot: number }>(
-      "/api/lot-size",
-      { method: "POST", body: JSON.stringify(body) }
+    withFallback(
+      () =>
+        request<string>("/api/strategy/ea", {
+          method: "POST",
+          body: JSON.stringify(body),
+        }),
+      () => localStore.strategyToEa(body)
     ),
 
-  listTrades: () => request<Trade[]>("/api/trades"),
-  createTrade: (body: Record<string, any>) =>
-    request<Trade>("/api/trades", { method: "POST", body: JSON.stringify(body) }),
-  deleteTrade: (id: string) =>
-    request<{ deleted: boolean }>(`/api/trades/${id}`, { method: "DELETE" }),
-  tradeStats: () => request<TradeStats>("/api/trades/stats"),
+  lotSize: (body: Record<string, any>) =>
+    withFallback(
+      () =>
+        request<{ lots: number; micro_lots: number; risk_amount: number; pip_value_per_lot: number }>(
+          "/api/lot-size",
+          { method: "POST", body: JSON.stringify(body) }
+        ),
+      () => localStore.lotSize(body)
+    ),
 
-  getChallenge: () => request<Challenge>("/api/challenge"),
+  listTrades: () =>
+    withFallback(() => request<Trade[]>("/api/trades"), () => localStore.listTrades()),
+  createTrade: (body: Record<string, any>) =>
+    withFallback(
+      () => request<Trade>("/api/trades", { method: "POST", body: JSON.stringify(body) }),
+      () => localStore.createTrade(body)
+    ),
+  deleteTrade: (id: string) =>
+    withFallback(
+      () => request<{ deleted: boolean }>(`/api/trades/${id}`, { method: "DELETE" }),
+      () => localStore.deleteTrade(id)
+    ),
+  tradeStats: () =>
+    withFallback(() => request<TradeStats>("/api/trades/stats"), () => localStore.tradeStats()),
+
+  getChallenge: () =>
+    withFallback(() => request<Challenge>("/api/challenge"), () => localStore.getChallenge()),
   upsertChallenge: (body: Record<string, any>) =>
-    request<Challenge>("/api/challenge", { method: "POST", body: JSON.stringify(body) }),
+    withFallback(
+      () => request<Challenge>("/api/challenge", { method: "POST", body: JSON.stringify(body) }),
+      () => localStore.upsertChallenge(body)
+    ),
 };

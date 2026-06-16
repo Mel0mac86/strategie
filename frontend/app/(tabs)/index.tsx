@@ -38,8 +38,8 @@ const RISK = [
 ];
 const STYLES = [
   { label: "Scalping", value: "scalping" },
-  { label: "Intraday", value: "intraday" },
-  { label: "Swing", value: "swing" },
+  { label: "Day Trading", value: "intraday" },
+  { label: "Swing Trading", value: "swing" },
 ];
 const STRATEGIES = [
   { label: "Trend + Pullback", value: "trend_pullback" },

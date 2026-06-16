@@ -11,7 +11,7 @@ Focus mercati: **Forex · Indici · Metalli** (più Crypto nel calcolatore).
 
 | Schermata | Descrizione |
 |-----------|-------------|
-| **Genera** (`/`) | Generatore strategie con chip selector (dimensione conto $10k–$200k, fase 1/2/Funded, asset class, tolleranza rischio, stile). Switch **Modalità Locale (istantanea) / Modalità AI (Claude Sonnet 4.5)**. Se la chiave AI fallisce → fallback automatico sul template locale. |
+| **Genera** (`/`) | Generatore strategie con chip selector (dimensione conto $10k–$200k, fase 1/2/Funded, asset class, tolleranza rischio, **stile: Scalping / Day Trading / Swing Trading**). Switch **Modalità Locale (istantanea) / Modalità AI (Claude Sonnet 4.5)**. Se la chiave AI fallisce → fallback automatico sul template locale. |
 | **Dettaglio strategia** (`/strategy/[id]`) | Bento-grid: hero card, Gestione del Rischio (max daily 5% / overall 10%, formula lot size in mono-font), Regole di Ingresso numerate, Routine Giornaliera (timeline), Cosa Fare / NON Fare. Pulsanti **PDF**, **Condividi**, **EA MT4**. Campo **Strategy Score** (0–100). |
 | **Storico** (`/history`) | Strategie salvate automaticamente, pull-to-refresh, eliminazione. |
 | **Lot Size** (`/calculator`) | Calcolatore standalone in tempo reale: `Capitale × Risk% / (SL × pip value)`. Risultato in lotti + USD + micro lotti. Chip asset Forex/Indici/Metalli/Crypto. |
@@ -31,6 +31,27 @@ pronto per MetaTrader 4** con gestione del rischio FTMO integrata:
 
 Tipi di strategia supportati: `trend_pullback`, `session_breakout`, `xau_scalper`,
 `mean_reversion`.
+
+## 📲 Installazione su iPhone (avendo solo l'iPhone)
+
+L'app è una **PWA**: si installa su iPhone **senza Mac, senza Xcode e senza App Store**.
+La versione pubblicata funziona **interamente sul dispositivo** (modalità locale, nessun
+backend necessario): genera strategie, EA `.mq4`, journal, dashboard e checklist offline.
+
+**Una tantum (dal browser dell'iPhone o da GitHub):**
+1. Su GitHub: **Settings → Pages → Source = "GitHub Actions"**.
+2. Il workflow [`deploy-web.yml`](.github/workflows/deploy-web.yml) builda e pubblica la PWA
+   ad ogni push su `frontend/**`.
+
+**Sull'iPhone:**
+1. Apri in **Safari** l'URL pubblicato: `https://<utente>.github.io/strategie/`
+   (per questo repo: `https://mel0mac86.github.io/strategie/`).
+2. Tocca **Condividi** (icona quadrato con freccia) → **"Aggiungi a Home"**.
+3. L'icona FTMO Strategy appare nella home: si apre a tutto schermo come un'app nativa.
+
+> Per la **distribuzione nativa su App Store/TestFlight** servono un account Apple Developer
+> ($99/anno) ed EAS Build (cloud, nessun Mac richiesto): vedi `eas.json`. Non è necessaria
+> per usare l'app: la PWA basta e si installa con il solo iPhone.
 
 ## Architettura
 
