@@ -47,7 +47,7 @@ jobs:
           EXPO_BASE_URL: /strategie
           # La PWA pubblicata funziona senza backend: tutto in locale sul dispositivo.
           EXPO_PUBLIC_LOCAL_ONLY: "1"
-        run: npx expo export --platform web
+        run: npx expo export --platform web && node scripts/patch-html.mjs
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
