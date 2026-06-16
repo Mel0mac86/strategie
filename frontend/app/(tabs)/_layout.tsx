@@ -64,6 +64,16 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="backtest"
+        options={{
+          title: "Backtest",
+          headerTitle: "BACKTEST STRATEGIA",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="bar-chart" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="checklist"
         options={{
           title: "Checklist",

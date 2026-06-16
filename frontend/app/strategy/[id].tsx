@@ -10,7 +10,7 @@ import {
   TextInput,
   Alert,
 } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, Strategy } from "@/api";
 import { Badge, Button, Card, ChipRow, SectionLabel } from "@/components/ui";
@@ -27,6 +27,7 @@ const EA_STRATEGIES = [
 
 export default function StrategyDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
   const [strategy, setStrategy] = useState<Strategy | null>(null);
   const [loading, setLoading] = useState(true);
   const [eaOpen, setEaOpen] = useState(false);
@@ -78,7 +79,26 @@ export default function StrategyDetail() {
           <IconAction icon="document-text-outline" label="PDF" onPress={() => exportStrategyPdf(s)} />
           <IconAction icon="share-social-outline" label="Condividi" onPress={() => shareStrategy(s)} />
           <IconAction icon="code-slash-outline" label="EA MT4" onPress={() => setEaOpen(true)} highlight />
+          <IconAction
+            icon="bar-chart-outline"
+            label="Backtest"
+            onPress={() =>
+              router.push({
+                pathname: "/backtest",
+                params: {
+                  strategy_type: (s.request?.strategy_type as string) || "trend_pullback",
+                  asset_class: (s.request?.asset_class as string) || "forex",
+                  account_size: String(s.ftmo?.account_size ?? 50000),
+                  timeframe: (s.request?.timeframe as string) || "H1",
+                  risk_pct: String(s.risk_management?.risk_per_trade_pct ?? 1),
+                },
+              })
+            }
+          />
         </View>
+        {s.request?.timeframe ? (
+          <Text style={styles.heroMeta}>Timeframe: {String(s.request.timeframe)}</Text>
+        ) : null}
       </Card>
 
       {/* BENTO: gestione rischio */}
@@ -288,6 +308,7 @@ function EaModal({
         strategy_type: stype,
         symbol,
         risk_pct: Number(riskPct) || 1,
+        timeframe: (strategy.request?.timeframe as string) || "H1",
       });
       await saveEaFile(code, `FTMO_${stype}_${symbol}.mq4`);
       onClose();
@@ -349,7 +370,8 @@ const styles = StyleSheet.create({
   heroTop: { flexDirection: "row", justifyContent: "space-between", marginBottom: space.md },
   heroTitle: { ...t.h1, color: colors.white },
   heroSummary: { ...t.body, color: "#D4D4D4", marginTop: space.sm, lineHeight: 21 },
-  heroActions: { flexDirection: "row", gap: space.sm, marginTop: space.lg },
+  heroActions: { flexDirection: "row", flexWrap: "wrap", gap: space.sm, marginTop: space.lg },
+  heroMeta: { ...t.small, color: "#9CA3AF", marginTop: space.md, fontWeight: "700" },
   iconAction: {
     flexDirection: "row",
     alignItems: "center",

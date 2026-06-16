@@ -26,6 +26,7 @@ class StrategyRequest(BaseModel):
     trading_style: str = Field("intraday", description="scalping | intraday | swing")
     strategy_type: str = Field("trend_pullback",
                                description="trend_pullback | session_breakout | xau_scalper | mean_reversion")
+    timeframe: str = Field("H1", description="M5 | M15 | M30 | H1 | H4 | D1")
     mode: str = Field("ai", description="ai | local")
 
 
@@ -101,3 +102,4 @@ class EARequest(BaseModel):
     symbol: str = "EURUSD"
     risk_pct: float = 1.0
     magic_number: int = 990201
+    timeframe: str = "H1"

@@ -132,6 +132,7 @@ async def strategy_to_ea(req: EARequest):
     code = generate_ea(
         strategy, strategy_type=stype, symbol=req.symbol,
         risk_pct=req.risk_pct, magic_number=req.magic_number,
+        timeframe=req.timeframe,
     )
     return PlainTextResponse(code, headers={
         "Content-Disposition": f'attachment; filename="FTMO_{stype}.mq4"'

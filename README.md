@@ -11,7 +11,8 @@ Focus mercati: **Forex · Indici · Metalli** (più Crypto nel calcolatore).
 
 | Schermata | Descrizione |
 |-----------|-------------|
-| **Genera** (`/`) | Generatore strategie con chip selector (dimensione conto $10k–$200k, fase 1/2/Funded, asset class, tolleranza rischio, **stile: Scalping / Day Trading / Swing Trading**). Switch **Modalità Locale (istantanea) / Modalità AI (Claude Sonnet 4.5)**. Se la chiave AI fallisce → fallback automatico sul template locale. |
+| **Genera** (`/`) | Generatore strategie con chip selector (dimensione conto $10k–$200k, fase 1/2/Funded, asset class, tolleranza rischio, **stile: Scalping / Day Trading / Swing Trading**, **timeframe M5–D1**). Switch **Modalità Locale (istantanea) / Modalità AI (Claude Sonnet 4.5)**. Se la chiave AI fallisce → fallback automatico sul template locale. |
+| **Backtest** (`/backtest`) | Testa la strategia su uno storico e ottieni l'**esito FTMO**: scegli strategia/timeframe/asset, carica i dati (**CSV stile MT4/TradingView** oppure **dati simulati** per una prova immediata) e ottieni P&L, win rate, profit factor, max drawdown, curva equity e verdetto (target raggiunto / limite giornaliero o totale violato). Tutto lato client. |
 | **Dettaglio strategia** (`/strategy/[id]`) | Bento-grid: hero card, Gestione del Rischio (max daily 5% / overall 10%, formula lot size in mono-font), Regole di Ingresso numerate, Routine Giornaliera (timeline), Cosa Fare / NON Fare. Pulsanti **PDF**, **Condividi**, **EA MT4**. Campo **Strategy Score** (0–100). |
 | **Storico** (`/history`) | Strategie salvate automaticamente, pull-to-refresh, eliminazione. |
 | **Lot Size** (`/calculator`) | Calcolatore standalone in tempo reale: `Capitale × Risk% / (SL × pip value)`. Risultato in lotti + USD + micro lotti. Chip asset Forex/Indici/Metalli/Crypto. |
