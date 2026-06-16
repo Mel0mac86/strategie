@@ -99,15 +99,22 @@ function wrap(text: string, width: number): string[] {
   return lines.length ? lines : [""];
 }
 
+const TREND_TF: Record<string, string> = {
+  M5: "PERIOD_M30", M15: "PERIOD_H1", M30: "PERIOD_H4",
+  H1: "PERIOD_H4", H4: "PERIOD_D1", D1: "PERIOD_W1",
+};
+
 export function generateEa(
   strategy: Strategy,
-  opts: { strategy_type?: string; symbol?: string; risk_pct?: number; magic_number?: number } = {}
+  opts: { strategy_type?: string; symbol?: string; risk_pct?: number; magic_number?: number; timeframe?: string } = {}
 ): string {
   let stype = opts.strategy_type || "trend_pullback";
   if (!EA_STRATEGY_TYPES.includes(stype as any)) stype = "trend_pullback";
   const symbol = opts.symbol || "EURUSD";
   const riskPct = opts.risk_pct ?? 1.0;
   const magic = opts.magic_number ?? 990201;
+  const tf = (opts.timeframe || (strategy?.request?.timeframe as string) || "H1").toUpperCase();
+  const trendTf = TREND_TF[tf] || "PERIOD_H4";
 
   const title = strategy?.title || "FTMO Strategy";
   const summary = strategy?.summary || "";
@@ -128,6 +135,7 @@ export function generateEa(
 //|  ${title}
 //|  Generato automaticamente da FTMO Strategy App
 //|  Tipo strategia: ${stype}
+//|  Timeframe operativo consigliato: ${tf} (applica l'EA a un grafico ${symbol} ${tf})
 //+------------------------------------------------------------------+
 // ${title}
 //
@@ -145,7 +153,7 @@ input double RiskPercent      = ${riskPct.toFixed(2)};   // Rischio % per trade
 input double MinRR            = ${minRr.toFixed(1)};      // Risk:Reward minimo (TP = SL * RR)
 input double SL_ATR_Mult      = 1.5;        // Stop loss = ATR * questo moltiplicatore
 input int    ATR_Period       = 14;         // Periodo ATR
-input ENUM_TIMEFRAMES TrendTF = PERIOD_H4;  // Timeframe per il filtro di trend
+input ENUM_TIMEFRAMES TrendTF = ${trendTf};  // Timeframe per il filtro di trend (op. ${tf})
 input int    MaxDailyTrades   = ${maxDailyTrades};         // Numero massimo di trade al giorno
 input double MaxDailyLossPct  = 5.0;        // Stop trading se perdita giornaliera >= (FTMO 5%)
 input double MaxOverallLossPct= 10.0;       // Blocco se drawdown totale >= (FTMO 10%)

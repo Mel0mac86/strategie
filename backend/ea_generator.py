@@ -103,12 +103,20 @@ int GetSignal()
     return blocks.get(stype, blocks["trend_pullback"]).strip("\n")
 
 
+TREND_TF = {
+    "M5": "PERIOD_M30", "M15": "PERIOD_H1", "M30": "PERIOD_H4",
+    "H1": "PERIOD_H4", "H4": "PERIOD_D1", "D1": "PERIOD_W1",
+}
+
+
 def generate_ea(strategy: dict, *, strategy_type: str = "trend_pullback",
                 symbol: str = "EURUSD", risk_pct: float = 1.0,
-                magic_number: int = 990201) -> str:
+                magic_number: int = 990201, timeframe: str = "H1") -> str:
     """Genera il sorgente MQL4 completo dell'EA."""
     if strategy_type not in STRATEGY_TYPES:
         strategy_type = "trend_pullback"
+    tf = (timeframe or (strategy or {}).get("request", {}).get("timeframe", "H1") or "H1").upper()
+    trend_tf = TREND_TF.get(tf, "PERIOD_H4")
 
     title = (strategy or {}).get("title", "FTMO Strategy")
     summary = (strategy or {}).get("summary", "")
@@ -131,6 +139,7 @@ def generate_ea(strategy: dict, *, strategy_type: str = "trend_pullback",
 //|  {title}
 //|  Generato automaticamente da FTMO Strategy App
 //|  Tipo strategia: {strategy_type}
+//|  Timeframe operativo consigliato: {tf} (applica l'EA a un grafico {symbol} {tf})
 //+------------------------------------------------------------------+
 // {title}
 //
@@ -148,7 +157,7 @@ input double RiskPercent      = {risk_pct:.2f};   // Rischio % per trade
 input double MinRR            = {min_rr:.1f};      // Risk:Reward minimo (TP = SL * RR)
 input double SL_ATR_Mult      = 1.5;        // Stop loss = ATR * questo moltiplicatore
 input int    ATR_Period       = 14;         // Periodo ATR
-input ENUM_TIMEFRAMES TrendTF = PERIOD_H4;  // Timeframe per il filtro di trend
+input ENUM_TIMEFRAMES TrendTF = {trend_tf};  // Timeframe per il filtro di trend (op. {tf})
 input int    MaxDailyTrades   = {max_daily_trades};         // Numero massimo di trade al giorno
 input double MaxDailyLossPct  = {daily_loss_pct:.1f};       // Stop trading se perdita giornaliera >= (FTMO 5%)
 input double MaxOverallLossPct= {overall_loss_pct:.1f};      // Blocco se drawdown totale >= (FTMO 10%)

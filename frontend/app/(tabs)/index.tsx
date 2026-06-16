@@ -47,6 +47,14 @@ const STRATEGIES = [
   { label: "XAU Scalper", value: "xau_scalper" },
   { label: "Mean Reversion", value: "mean_reversion" },
 ];
+const TIMEFRAMES = [
+  { label: "M5", value: "M5" },
+  { label: "M15", value: "M15" },
+  { label: "M30", value: "M30" },
+  { label: "H1", value: "H1" },
+  { label: "H4", value: "H4" },
+  { label: "D1", value: "D1" },
+];
 
 export default function GeneratorScreen() {
   const router = useRouter();
@@ -56,6 +64,7 @@ export default function GeneratorScreen() {
   const [risk, setRisk] = useState("medium");
   const [style, setStyle] = useState("intraday");
   const [strategyType, setStrategyType] = useState("trend_pullback");
+  const [timeframe, setTimeframe] = useState("H1");
   const [mode, setMode] = useState<"local" | "ai">("local");
   const [loading, setLoading] = useState(false);
 
@@ -69,6 +78,7 @@ export default function GeneratorScreen() {
         risk_tolerance: risk,
         trading_style: style,
         strategy_type: strategyType,
+        timeframe,
         mode,
       });
       router.push(`/strategy/${strat.id}`);
@@ -134,6 +144,9 @@ export default function GeneratorScreen() {
 
         <SectionLabel>Tipo di strategia</SectionLabel>
         <ChipRow options={STRATEGIES} value={strategyType} onChange={setStrategyType} />
+
+        <SectionLabel>Timeframe</SectionLabel>
+        <ChipRow options={TIMEFRAMES} value={timeframe} onChange={setTimeframe} />
       </Card>
 
       <Button

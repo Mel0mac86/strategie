@@ -57,6 +57,7 @@ export const localStore = {
       strategy_type: body.strategy_type,
       symbol: body.symbol,
       risk_pct: body.risk_pct,
+      timeframe: body.timeframe,
     });
   },
 

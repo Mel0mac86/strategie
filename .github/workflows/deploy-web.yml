@@ -56,6 +56,9 @@ jobs:
 
   deploy:
     needs: build
+    # Il deploy su GitHub Pages è consentito solo dal branch di default.
+    # Sui branch/PR gira solo il job "build" (CI), evitando falsi fallimenti.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
