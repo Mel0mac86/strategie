@@ -84,7 +84,7 @@ struct ContentView: View {
     private var contenuto: some View {
         if vm.inCaricamento {
             Spacer()
-            ProgressView("Cerco su Gutenberg, Internet Archive, DOAB…")
+            ProgressView("Cerco su Gutenberg, Internet Archive, Open Library, DOAB, LibriVox…")
             Spacer()
         } else if let msg = vm.messaggio, vm.risultati.isEmpty {
             Spacer()
@@ -123,14 +123,14 @@ struct LibroRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "book.closed.fill")
-                .foregroundStyle(.tint).font(.title2).frame(width: 32)
+            copertina
             VStack(alignment: .leading, spacing: 3) {
                 Text(libro.titolo).font(.headline).lineLimit(2)
                 Text(libro.autore + (libro.anno.isEmpty ? "" : " · \(libro.anno)"))
                     .font(.subheadline).foregroundStyle(.secondary)
                 HStack(spacing: 6) {
                     Text(libro.fonte)
+                    if !libro.lingua.isEmpty { Text("· \(libro.lingua)") }
                     Text("·")
                     Text(libro.formatiDescrizione.uppercased())
                 }
@@ -147,6 +147,28 @@ struct LibroRow: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    /// Copertina del libro (se disponibile), con segnaposto.
+    @ViewBuilder
+    private var copertina: some View {
+        if let url = libro.cover {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let img):
+                    img.resizable().scaledToFill()
+                default:
+                    Image(systemName: "book.closed.fill")
+                        .foregroundStyle(.tint).font(.title2)
+                }
+            }
+            .frame(width: 40, height: 56)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+        } else {
+            Image(systemName: "book.closed.fill")
+                .foregroundStyle(.tint).font(.title2)
+                .frame(width: 40, height: 56)
+        }
     }
 }
 

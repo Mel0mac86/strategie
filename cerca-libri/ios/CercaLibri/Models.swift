@@ -7,12 +7,17 @@ struct Libro: Identifiable, Hashable {
     let autore: String
     let anno: String
     let fonte: String
-    /// formato ("pdf", "epub", "txt") -> URL di download
-    let formati: [String: URL]
+    /// formato ("pdf", "epub", "txt", "zip") -> URL di download
+    var formati: [String: URL]
+    var lingua: String = ""
+    var cover: URL? = nil
+    var popolarita: Int = 0
+    /// Identificativo Internet Archive, per risolvere i file reali al download.
+    var archiveID: String = ""
 
     /// Sceglie l'URL nel formato preferito, con fallback sensato.
     func url(preferito: String) -> (formato: String, url: URL)? {
-        let ordine = [preferito, "pdf", "epub", "txt"]
+        let ordine = [preferito, "pdf", "epub", "txt", "zip"]
         for f in ordine {
             if let u = formati[f] { return (f, u) }
         }
