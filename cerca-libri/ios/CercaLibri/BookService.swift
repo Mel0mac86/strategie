@@ -1,7 +1,7 @@
 import Foundation
 
 /// Interroga le fonti gratuite e legali e scarica i file.
-/// Fonti: Project Gutenberg (Gutendex), Internet Archive, DOAB.
+/// Fonti: Project Gutenberg (Gutendex), Internet Archive, DOAB, LibriVox.
 enum BookService {
 
     private static let session: URLSession = {
@@ -19,7 +19,16 @@ enum BookService {
         async let g = gutenberg(q)
         async let a = internetArchive(q)
         async let d = doab(q)
-        return await g + a + d
+        async let l = librivox(q)
+        return await g + a + d + l
+    }
+
+    /// Link pronto alla ricerca su MLOL (prestito biblioteche, serve la tessera).
+    /// MLOL non ha un'API pubblica: è un suggerimento legale, non un download.
+    static func urlMLOL(_ titolo: String) -> URL? {
+        let q = titolo.trimmingCharacters(in: .whitespacesAndNewlines)
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        return URL(string: "https://www.medialibrary.it/cerca?keywords=\(q)")
     }
 
     // MARK: - Project Gutenberg (Gutendex)
@@ -87,6 +96,39 @@ enum BookService {
                 autore: creator,
                 anno: doc["year"].map { "\($0)" } ?? "",
                 fonte: "Internet Archive", formati: formati))
+        }
+        return libri
+    }
+
+    // MARK: - LibriVox (audiolibri di pubblico dominio)
+
+    private static func librivox(_ titolo: String) async -> [Libro] {
+        guard var c = URLComponents(string: "https://librivox.org/api/feed/audiobooks") else { return [] }
+        c.queryItems = [
+            URLQueryItem(name: "title", value: "^" + titolo),
+            URLQueryItem(name: "format", value: "json"),
+            URLQueryItem(name: "limit", value: "6"),
+        ]
+        guard let url = c.url,
+              let (data, _) = try? await session.data(from: url),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let books = root["books"] as? [[String: Any]] else { return [] }
+
+        var libri: [Libro] = []
+        for libro in books.prefix(6) {
+            guard let zip = libro["url_zip_file"] as? String,
+                  let u = URL(string: zip) else { continue }
+            var autore = "Sconosciuto"
+            if let autori = libro["authors"] as? [[String: Any]], let a = autori.first {
+                let nome = [a["first_name"] as? String, a["last_name"] as? String]
+                    .compactMap { $0 }.joined(separator: " ")
+                    .trimmingCharacters(in: .whitespaces)
+                if !nome.isEmpty { autore = nome }
+            }
+            libri.append(Libro(
+                titolo: libro["title"] as? String ?? "(senza titolo)",
+                autore: autore, anno: "",
+                fonte: "LibriVox (audiolibro MP3)", formati: ["zip": u]))
         }
         return libri
     }

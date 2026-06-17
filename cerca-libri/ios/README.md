@@ -2,8 +2,10 @@
 
 Versione iOS dell'app: cerchi un libro per **titolo** e lo scarichi in
 **PDF / EPUB / TXT** da fonti legali e gratuite (Project Gutenberg,
-Internet Archive, DOAB). Il file scaricato si apre direttamente nell'app
-con l'anteprima Quick Look e da lì puoi salvarlo nei *File* o condividerlo.
+Internet Archive, DOAB, **LibriVox** per gli audiolibri). Il file scaricato si
+apre direttamente nell'app con l'anteprima Quick Look e da lì puoi salvarlo nei
+*File* o condividerlo. In fondo alla schermata c'è anche un link alla ricerca su
+**MLOL** (prestito digitale delle biblioteche italiane, serve la tessera).
 
 ## Come avviarla (serve un Mac con Xcode)
 
@@ -35,7 +37,7 @@ configurare nulla. (Se in futuro aggiungi domini in HTTP, dovrai impostare
 | `CercaLibriApp.swift` | Punto di ingresso dell'app |
 | `ContentView.swift` | Interfaccia: ricerca, lista risultati, download, anteprima |
 | `Models.swift` | Modello `Libro` |
-| `BookService.swift` | Chiamate di rete alle 3 fonti + download (async/await) |
+| `BookService.swift` | Chiamate di rete alle fonti + download (async/await) |
 
 ## Note
 
@@ -43,4 +45,4 @@ configurare nulla. (Se in futuro aggiungi domini in HTTP, dovrai impostare
 - Se vuoi supportare **iOS 16**, sostituisci `ContentUnavailableView` con una
   semplice `VStack` di testo e usa un foglio con `QLPreviewController`
   invece di `.quickLookPreview`.
-- La ricerca interroga le 3 fonti **in parallelo** (`async let`).
+- La ricerca interroga le fonti **in parallelo** (`async let`).

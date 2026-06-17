@@ -5,8 +5,8 @@ cerca-libri — Cerca e scarica libri (PDF/EPUB) da fonti legali e gratuite.
 Fonti interrogate (solo pubblico dominio / accesso aperto):
   - Project Gutenberg (via API Gutendex)
   - Internet Archive
-  - Open Library (rimanda ad Internet Archive)
   - DOAB — Directory of Open Access Books
+  - LibriVox (audiolibri di pubblico dominio)
 
 Uso:
     python3 cerca_libri.py "La Divina Commedia"
@@ -144,6 +144,41 @@ def cerca_internet_archive(titolo: str, limite: int = 5) -> list[Risultato]:
     return out
 
 
+def cerca_librivox(titolo: str, limite: int = 5) -> list[Risultato]:
+    """LibriVox — audiolibri di pubblico dominio (MP3, scaricati come .zip)."""
+    out: list[Risultato] = []
+    try:
+        r = requests.get(
+            "https://librivox.org/api/feed/audiobooks",
+            params={"title": "^" + titolo, "format": "json", "limit": limite},
+            headers=HEADERS,
+            timeout=TIMEOUT,
+        )
+        r.raise_for_status()
+        for libro in r.json().get("books", [])[:limite]:
+            zip_url = libro.get("url_zip_file")
+            if not zip_url:
+                continue
+            autori = libro.get("authors") or []
+            if autori:
+                a = autori[0]
+                autore = f"{a.get('first_name', '')} {a.get('last_name', '')}".strip()
+            else:
+                autore = "Sconosciuto"
+            out.append(
+                Risultato(
+                    titolo=libro.get("title", "(senza titolo)"),
+                    autore=autore or "Sconosciuto",
+                    anno="",
+                    fonte="LibriVox (audiolibro MP3)",
+                    formati={"zip": zip_url},
+                )
+            )
+    except (requests.RequestException, ValueError):
+        pass
+    return out
+
+
 def cerca_doab(titolo: str, limite: int = 5) -> list[Risultato]:
     """DOAB — Directory of Open Access Books."""
     out: list[Risultato] = []
@@ -184,7 +219,12 @@ def cerca_doab(titolo: str, limite: int = 5) -> list[Risultato]:
     return out
 
 
-FONTI = [cerca_gutenberg, cerca_internet_archive, cerca_doab]
+FONTI = [cerca_gutenberg, cerca_internet_archive, cerca_doab, cerca_librivox]
+
+# Link legale per il prestito digitale gratuito delle biblioteche italiane.
+# MLOL non ha un'API pubblica e richiede la tessera della biblioteca, quindi
+# non è scaricabile in automatico: lo proponiamo come suggerimento.
+MLOL_HOME = "https://www.medialibrary.it"
 
 
 # ---------------------------------------------------------------------------
@@ -259,6 +299,13 @@ def main() -> int:
         fmt = ", ".join(sorted(r.formati))
         print(f"  [{i}] {r.titolo}{anno}")
         print(f"      di {r.autore} — {r.fonte} — formati: {fmt}")
+
+    print(
+        f"\n💡 Cerchi un titolo recente sotto copyright? In modo legale puoi "
+        f"prenderlo in\n   prestito digitale gratuito dalla tua biblioteca con "
+        f"MLOL (serve la tessera):\n   {MLOL_HOME}/cerca?keywords="
+        + re.sub(r"\s+", "+", titolo.strip())
+    )
 
     if args.auto:
         scelte = list(range(len(risultati)))

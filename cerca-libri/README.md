@@ -9,9 +9,18 @@ ad accesso aperto:
 - **Project Gutenberg** (classici di pubblico dominio)
 - **Internet Archive** (testi digitalizzati)
 - **DOAB** — Directory of Open Access Books (saggistica accademica open access)
+- **LibriVox** (audiolibri di pubblico dominio, MP3 in archivio `.zip`)
 
 > ⚠️ L'app non scarica libri protetti da copyright da siti pirata: è pensata
 > per i tantissimi testi disponibili legalmente e gratuitamente.
+
+### E i libri recenti sotto copyright?
+
+Per quelli l'app non scarica nulla (sarebbe pirateria). In modo **legale** puoi
+prenderli in **prestito digitale gratuito** dalla tua biblioteca: in Italia con
+**MLOL — MediaLibraryOnline** (serve la tessera della biblioteca). L'app, a fine
+ricerca, stampa un link pronto alla ricerca su MLOL. MLOL non ha un'API pubblica
+e richiede il login, quindi non è automatizzabile come download diretto.
 
 ## Installazione
 
@@ -45,7 +54,7 @@ python3 cerca_libri.py "Moby Dick" --auto
 
 ## Come funziona
 
-1. Interroga in sequenza le API delle tre fonti.
+1. Interroga in sequenza le API delle fonti gratuite.
 2. Raccoglie titolo, autore, anno e i link di download disponibili.
 3. Mostra l'elenco numerato e ti fa scegliere.
 4. Scarica il file nel formato preferito (con fallback su un altro formato

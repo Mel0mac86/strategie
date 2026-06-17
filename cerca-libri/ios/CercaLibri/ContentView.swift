@@ -45,6 +45,7 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 formatoPicker
                 contenuto
+                mlolFooter
             }
             .navigationTitle("Cerca Libri 📚")
             .searchable(text: $vm.query, prompt: "Titolo del libro")
@@ -61,6 +62,22 @@ struct ContentView: View {
         }
         .pickerStyle(.segmented)
         .padding()
+    }
+
+    /// Suggerimento legale: prestito biblioteche con MLOL (serve la tessera).
+    @ViewBuilder
+    private var mlolFooter: some View {
+        if !vm.query.trimmingCharacters(in: .whitespaces).isEmpty,
+           let url = BookService.urlMLOL(vm.query) {
+            Divider()
+            Link(destination: url) {
+                Label("Cerchi un titolo recente? Provalo in prestito su MLOL",
+                      systemImage: "building.columns")
+                    .font(.footnote)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+            }
+        }
     }
 
     @ViewBuilder
