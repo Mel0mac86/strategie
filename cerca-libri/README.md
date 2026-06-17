@@ -63,8 +63,19 @@ python3 cerca_libri.py "Moby Dick" --auto
 | `--cartella` / `-c` | Cartella di destinazione (default: corrente) |
 | `--num` / `-n` | Quanti risultati mostrare (default: 10) |
 | `--lingua` / `-l` | Filtro lingua per Gutenberg (es. `it`, `en`, `fr`) |
+| `--solo` | Mostra solo i risultati disponibili nel formato scelto (`--formato`) |
 | `--auto` | Scarica il primo risultato valido senza chiedere |
 | `--apri` | Apre il file subito dopo il download |
+
+### Altre fonti legali (link, non download automatico)
+
+A fine ricerca l'app stampa anche due link da aprire nel browser:
+
+- **Standard Ebooks** — EPUB di pubblico dominio curati a mano. Il download è
+  protetto da anti-bot (segnalano il ban dell'IP per gli accessi automatici),
+  quindi non lo scarichiamo: apri il link e scarica dal browser.
+- **MLOL** — prestito digitale gratuito delle biblioteche italiane (serve la
+  tessera). Nessuna API pubblica, quindi è solo un link.
 
 ## Come funziona
 

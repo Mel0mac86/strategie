@@ -42,6 +42,11 @@ HEADERS = {"User-Agent": "cerca-libri/2.0 (https://example.local)"}
 # non è scaricabile in automatico: lo proponiamo come suggerimento.
 MLOL_HOME = "https://www.medialibrary.it"
 
+# Standard Ebooks: EPUB di pubblico dominio curati a mano. Il download è protetto
+# da anti-bot (segnala il ban dell'IP per gli accessi automatici), perciò non lo
+# scarichiamo: offriamo il link alla ricerca da aprire nel browser.
+STANDARD_EBOOKS = "https://standardebooks.org/ebooks/?query="
+
 
 # ---------------------------------------------------------------------------
 # Modello dati
@@ -447,6 +452,8 @@ def main() -> int:
     p.add_argument("--cartella", "-c", default=".", help="Cartella di destinazione")
     p.add_argument("--num", "-n", type=int, default=10, help="Quanti risultati mostrare (default: 10)")
     p.add_argument("--lingua", "-l", default="", help="Filtro lingua per Gutenberg (es. it, en, fr)")
+    p.add_argument("--solo", action="store_true",
+                   help="Mostra solo i risultati disponibili nel formato scelto (--formato)")
     p.add_argument("--auto", action="store_true",
                    help="Scarica automaticamente il primo risultato valido")
     p.add_argument("--apri", action="store_true", help="Apri il file dopo il download")
@@ -456,19 +463,26 @@ def main() -> int:
     print(f'\n🔎 Cerco "{titolo}" su 5 fonti legali...\n')
     risultati = cerca_tutte(titolo, max(args.num, 5), args.lingua)
 
+    if args.solo:
+        risultati = [r for r in risultati if args.formato in r.formati]
+
     if not risultati:
         print("\n❌ Nessun libro trovato sulle fonti gratuite per questo titolo.")
-        print("   Suggerimento: prova con il titolo originale o solo l'autore.")
+        if args.solo:
+            print(f"   (Nessun risultato nel formato '{args.formato}'. Prova senza --solo.)")
+        else:
+            print("   Suggerimento: prova con il titolo originale o solo l'autore.")
         return 1
 
     risultati = risultati[: args.num]
     _stampa_risultati(risultati)
 
+    query_url = re.sub(r"\s+", "+", titolo.strip())
     print(
-        f"\n💡 Cerchi un titolo recente sotto copyright? In modo legale puoi "
-        f"prenderlo in\n   prestito digitale gratuito dalla tua biblioteca con "
-        f"MLOL (serve la tessera):\n   {MLOL_HOME}/cerca?keywords="
-        + re.sub(r"\s+", "+", titolo.strip())
+        f"\n💡 Altre fonti legali (da aprire nel browser):"
+        f"\n   • Standard Ebooks (EPUB curati, pubblico dominio): {STANDARD_EBOOKS}{query_url}"
+        f"\n   • MLOL — prestito digitale delle biblioteche italiane (serve la tessera):"
+        f"\n     {MLOL_HOME}/cerca?keywords={query_url}"
     )
 
     if args.auto:

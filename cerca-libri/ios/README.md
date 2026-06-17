@@ -4,10 +4,11 @@ Versione iOS dell'app: cerchi un libro per **titolo** e lo scarichi in
 **PDF / EPUB / TXT** da fonti legali e gratuite (Project Gutenberg,
 Internet Archive, **Open Library**, DOAB, **LibriVox** per gli audiolibri). I
 risultati mostrano la **copertina**, sono **deduplicati** e **ordinati** per
-pertinenza e popolarità. Il file scaricato si apre direttamente nell'app con
-l'anteprima Quick Look e da lì puoi salvarlo nei *File* o condividerlo. In fondo
-alla schermata c'è anche un link alla ricerca su **MLOL** (prestito digitale
-delle biblioteche italiane, serve la tessera).
+pertinenza e popolarità, con un **filtro per formato** (mostra solo PDF/EPUB/TXT).
+Il file scaricato si apre direttamente nell'app con l'anteprima Quick Look e da lì
+puoi salvarlo nei *File* o condividerlo. In fondo alla schermata ci sono anche i
+link a **Standard Ebooks** (EPUB curati di pubblico dominio) e **MLOL** (prestito
+digitale delle biblioteche italiane, serve la tessera) — da aprire nel browser.
 
 ## Come avviarla (serve un Mac con Xcode)
 

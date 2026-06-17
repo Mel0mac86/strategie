@@ -28,9 +28,19 @@ enum BookService {
     /// Link pronto alla ricerca su MLOL (prestito biblioteche, serve la tessera).
     /// MLOL non ha un'API pubblica: è un suggerimento legale, non un download.
     static func urlMLOL(_ titolo: String) -> URL? {
+        link("https://www.medialibrary.it/cerca?keywords=", titolo)
+    }
+
+    /// Link alla ricerca su Standard Ebooks (EPUB curati di pubblico dominio).
+    /// Il download è protetto da anti-bot, quindi è un link da aprire nel browser.
+    static func urlStandardEbooks(_ titolo: String) -> URL? {
+        link("https://standardebooks.org/ebooks/?query=", titolo)
+    }
+
+    private static func link(_ base: String, _ titolo: String) -> URL? {
         let q = titolo.trimmingCharacters(in: .whitespacesAndNewlines)
             .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        return URL(string: "https://www.medialibrary.it/cerca?keywords=\(q)")
+        return URL(string: base + q)
     }
 
     // MARK: - Project Gutenberg (Gutendex)

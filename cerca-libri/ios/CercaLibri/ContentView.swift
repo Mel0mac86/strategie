@@ -10,6 +10,12 @@ final class RicercaViewModel: ObservableObject {
     @Published var messaggio: String?
     @Published var fileScaricato: URL?
     @Published var libroInDownload: Libro.ID?
+    @Published var soloFormato = false
+
+    /// Risultati filtrati: se `soloFormato` è attivo mostra solo chi ha il formato scelto.
+    var risultatiVisibili: [Libro] {
+        soloFormato ? risultati.filter { $0.formati[formato] != nil } : risultati
+    }
 
     func cerca() async {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -55,28 +61,40 @@ struct ContentView: View {
     }
 
     private var formatoPicker: some View {
-        Picker("Formato", selection: $vm.formato) {
-            Text("PDF").tag("pdf")
-            Text("EPUB").tag("epub")
-            Text("TXT").tag("txt")
+        VStack(spacing: 8) {
+            Picker("Formato", selection: $vm.formato) {
+                Text("PDF").tag("pdf")
+                Text("EPUB").tag("epub")
+                Text("TXT").tag("txt")
+            }
+            .pickerStyle(.segmented)
+            Toggle("Mostra solo i risultati in \(vm.formato.uppercased())", isOn: $vm.soloFormato)
+                .font(.footnote)
         }
-        .pickerStyle(.segmented)
         .padding()
     }
 
-    /// Suggerimento legale: prestito biblioteche con MLOL (serve la tessera).
+    /// Altre fonti legali da aprire nel browser (Standard Ebooks, MLOL).
     @ViewBuilder
     private var mlolFooter: some View {
-        if !vm.query.trimmingCharacters(in: .whitespaces).isEmpty,
-           let url = BookService.urlMLOL(vm.query) {
+        let q = vm.query.trimmingCharacters(in: .whitespaces)
+        if !q.isEmpty {
             Divider()
-            Link(destination: url) {
-                Label("Cerchi un titolo recente? Provalo in prestito su MLOL",
-                      systemImage: "building.columns")
-                    .font(.footnote)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
+            HStack(spacing: 16) {
+                if let se = BookService.urlStandardEbooks(q) {
+                    Link(destination: se) {
+                        Label("Standard Ebooks", systemImage: "books.vertical")
+                    }
+                }
+                if let mlol = BookService.urlMLOL(q) {
+                    Link(destination: mlol) {
+                        Label("MLOL biblioteche", systemImage: "building.columns")
+                    }
+                }
             }
+            .font(.footnote)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
         }
     }
 
@@ -97,8 +115,15 @@ struct ContentView: View {
                 systemImage: "magnifyingglass",
                 description: Text("Scrivi un titolo e premi Invio. Solo fonti legali e gratuite."))
             Spacer()
+        } else if vm.risultatiVisibili.isEmpty {
+            Spacer()
+            ContentUnavailableView(
+                "Nessun risultato in \(vm.formato.uppercased())",
+                systemImage: "line.3.horizontal.decrease.circle",
+                description: Text("Disattiva il filtro per vedere tutti i formati disponibili."))
+            Spacer()
         } else {
-            List(vm.risultati) { libro in
+            List(vm.risultatiVisibili) { libro in
                 LibroRow(libro: libro,
                          inDownload: vm.libroInDownload == libro.id) {
                     Task { await vm.scarica(libro) }
