@@ -11,11 +11,16 @@ import {
   Text,
   Pressable,
   StyleSheet,
+  Alert,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system";
 import { colors, space, hardBorder, type as t } from "@/theme";
 import { Card, Button } from "@/components/ui";
 import { storage, todayKey } from "@/utils/storage";
+import { exportBackup, importBackup } from "@/utils/backup";
 
 const ITEMS: string[] = [
   "Calendario economico controllato (notizie ad alto impatto)",
@@ -134,8 +139,71 @@ export default function ChecklistScreen() {
 
       <Button title="Reset" variant="secondary" onPress={reset} />
 
+      <BackupCard />
+
       <View style={{ height: space.xl }} />
     </ScrollView>
+  );
+}
+
+function BackupCard() {
+  const [busy, setBusy] = useState(false);
+  const onExport = async () => {
+    setBusy(true);
+    try {
+      await exportBackup();
+    } catch (e: any) {
+      Alert.alert("Errore", e?.message || "Export non riuscito.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const onImport = async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: ["application/json", "text/plain", "*/*"],
+        copyToCacheDirectory: true,
+      });
+      if (res.canceled || !res.assets?.length) return;
+      const a = res.assets[0];
+      const text =
+        Platform.OS === "web"
+          ? await (await fetch(a.uri)).text()
+          : await FileSystem.readAsStringAsync(a.uri);
+      Alert.alert(
+        "Ripristina backup",
+        "I dati attuali verranno sovrascritti con quelli del backup. Continuare?",
+        [
+          { text: "Annulla", style: "cancel" },
+          {
+            text: "Ripristina",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                const n = await importBackup(text);
+                Alert.alert("Ripristino completato", `${n} elementi ripristinati. Riapri le schermate per vederli.`);
+              } catch (e: any) {
+                Alert.alert("Errore", e?.message || "Ripristino non riuscito.");
+              }
+            },
+          },
+        ]
+      );
+    } catch (e: any) {
+      Alert.alert("Errore", e?.message || "Lettura file non riuscita.");
+    }
+  };
+  return (
+    <Card style={{ marginTop: space.lg }}>
+      <Text style={styles.backupTitle}>BACKUP & RIPRISTINO</Text>
+      <Text style={styles.backupHint}>
+        Esporta tutti i tuoi dati (strategie, trade, conti, backtest, checklist) in un file da
+        conservare, e reimportalo su questo o un altro dispositivo.
+      </Text>
+      <Button title={busy ? "Esportazione..." : "⬇️ Esporta backup"} variant="secondary" onPress={onExport} loading={busy} />
+      <View style={{ height: space.sm }} />
+      <Button title="⬆️ Importa backup" variant="secondary" onPress={onImport} />
+    </Card>
   );
 }
 
@@ -143,6 +211,8 @@ const styles = StyleSheet.create({
   content: {
     padding: space.lg,
   },
+  backupTitle: { ...t.h3, color: colors.black, marginBottom: space.xs },
+  backupHint: { ...t.small, color: colors.muted, marginBottom: space.md, lineHeight: 18 },
   header: {
     ...hardBorder,
     padding: space.lg,
