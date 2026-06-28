@@ -273,6 +273,8 @@ export default function DashboardScreen() {
           : "Configura la tua challenge per avviare il tracking."}
       </Text>
 
+      {hasAccounts && <SummaryHeader list={challenges} />}
+
       {hasAccounts && (
         <>
           {challenges.map((c) => (
@@ -441,6 +443,43 @@ function SetupForm(props: {
         />
       </View>
     </Card>
+  );
+}
+
+function SummaryHeader({ list }: { list: Challenge[] }) {
+  const accts = list.filter((c) => c.progress);
+  if (accts.length < 1) return null;
+  const cap = accts.reduce((s, c) => s + (c.account_size || 0), 0);
+  const eq = accts.reduce((s, c) => s + (c.progress!.current_balance || 0), 0);
+  const pnl = eq - cap;
+  const pnlPct = cap ? (pnl / cap) * 100 : 0;
+  const near = accts.filter(
+    (c) => c.progress!.risk_color === "red" || computeAlerts(c.progress!).some((a) => a.level === "critical")
+  ).length;
+  const target = accts.filter((c) => c.progress!.target_reached).length;
+  const pnlColor = pnl >= 0 ? colors.green : colors.red;
+  return (
+    <View style={styles.summary}>
+      <Text style={styles.summaryLabel}>RIEPILOGO · {accts.length} CONTI</Text>
+      <Text style={styles.summaryEquity}>{money(eq)}</Text>
+      <Text style={[styles.summaryPnl, { color: pnlColor }]}>
+        {pnl >= 0 ? "+" : ""}{money(pnl)} ({pnl >= 0 ? "+" : ""}{pct(pnlPct)})
+      </Text>
+      <View style={styles.summaryRow}>
+        <View style={styles.summaryStat}>
+          <Text style={[styles.summaryStatVal, { color: near > 0 ? colors.red : colors.green }]}>{near}</Text>
+          <Text style={styles.summaryStatLbl}>VICINI AI LIMITI</Text>
+        </View>
+        <View style={styles.summaryStat}>
+          <Text style={[styles.summaryStatVal, { color: colors.green }]}>{target}</Text>
+          <Text style={styles.summaryStatLbl}>TARGET RAGGIUNTI</Text>
+        </View>
+        <View style={styles.summaryStat}>
+          <Text style={styles.summaryStatVal}>{money(cap)}</Text>
+          <Text style={styles.summaryStatLbl}>CAPITALE TOT.</Text>
+        </View>
+      </View>
+    </View>
   );
 }
 
@@ -850,6 +889,14 @@ const styles = StyleSheet.create({
   acctBarTrack: { height: 8, ...hardBorder, backgroundColor: colors.paper, marginTop: space.sm },
   acctBarFill: { height: "100%", backgroundColor: colors.green },
   acctMeta: { ...t.label, color: colors.muted, marginTop: 6 },
+  summary: { ...hardBorder, backgroundColor: colors.black, padding: space.lg, marginBottom: space.lg },
+  summaryLabel: { ...t.label, color: "#9CA3AF" },
+  summaryEquity: { fontSize: 30, fontWeight: "900", color: colors.white, fontFamily: fonts.mono, marginTop: 4 },
+  summaryPnl: { fontSize: 16, fontWeight: "900", marginTop: 2 },
+  summaryRow: { flexDirection: "row", marginTop: space.md, borderTopWidth: 1, borderTopColor: "#333", paddingTop: space.md },
+  summaryStat: { flex: 1 },
+  summaryStatVal: { fontSize: 18, fontWeight: "900", color: colors.white },
+  summaryStatLbl: { fontSize: 9, fontWeight: "700", letterSpacing: 0.5, color: "#9CA3AF", marginTop: 2 },
 
   // Azioni
   actions: { marginTop: space.sm, marginBottom: space.xl },
