@@ -21,6 +21,7 @@ import { colors, space, hardBorder, type as t } from "@/theme";
 import { Card, Button } from "@/components/ui";
 import { storage, todayKey } from "@/utils/storage";
 import { exportBackup, importBackup } from "@/utils/backup";
+import { openTutorial } from "@/components/Onboarding";
 
 const ITEMS: string[] = [
   "Calendario economico controllato (notizie ad alto impatto)",
@@ -203,6 +204,8 @@ function BackupCard() {
       <Button title={busy ? "Esportazione..." : "⬇️ Esporta backup"} variant="secondary" onPress={onExport} loading={busy} />
       <View style={{ height: space.sm }} />
       <Button title="⬆️ Importa backup" variant="secondary" onPress={onImport} />
+      <View style={{ height: space.sm }} />
+      <Button title="❔ Rivedi tutorial" variant="secondary" onPress={openTutorial} />
     </Card>
   );
 }
