@@ -21,6 +21,7 @@ import { api, Trade, TradeStats } from "@/api";
 import { Button, ChipRow, SectionLabel, Stat, Badge } from "@/components/ui";
 import { colors, space, fonts, hardBorder, type as t } from "@/theme";
 import { parseMt4Trades } from "@/utils/mt4Import";
+import { EquityChart } from "@/components/EquityChart";
 
 const DIRECTIONS = [
   { label: "Long", value: "long" },
@@ -47,6 +48,7 @@ export default function JournalScreen() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [stats, setStats] = useState<TradeStats | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [showAdv, setShowAdv] = useState(false);
 
   const [modalVisible, setModalVisible] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -306,6 +308,17 @@ export default function JournalScreen() {
 
       {renderStats()}
 
+      {trades.length > 0 && (
+        <View style={styles.advWrap}>
+          <Pressable onPress={() => setShowAdv((s) => !s)} style={styles.advToggle}>
+            <Text style={styles.advToggleTxt}>
+              {showAdv ? "▲ Nascondi statistiche avanzate" : "▼ Statistiche avanzate"}
+            </Text>
+          </Pressable>
+          {showAdv && <AdvancedStats trades={trades} />}
+        </View>
+      )}
+
       <FlatList
         data={trades}
         keyExtractor={(item) => item.id}
@@ -488,6 +501,79 @@ export default function JournalScreen() {
   );
 }
 
+function AdvancedStats({ trades }: { trades: Trade[] }) {
+  const DAYS = ["Dom", "Lun", "Mar", "Mer", "Gio", "Ven", "Sab"];
+  // Equity curve dei trade reali (P&L cumulato in ordine cronologico)
+  const chrono = [...trades].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
+  let cum = 0;
+  const equity = [0, ...chrono.map((t) => (cum += Number(t.pnl) || 0))];
+
+  // Per asset
+  const byAsset: Record<string, { n: number; w: number; pnl: number; r: number }> = {};
+  for (const t of trades) {
+    const k = t.asset || "?";
+    byAsset[k] = byAsset[k] || { n: 0, w: 0, pnl: 0, r: 0 };
+    byAsset[k].n++;
+    if (Number(t.pnl) > 0) byAsset[k].w++;
+    byAsset[k].pnl += Number(t.pnl) || 0;
+    byAsset[k].r += Number(t.r_multiple) || 0;
+  }
+  const assets = Object.entries(byAsset).sort((a, b) => b[1].pnl - a[1].pnl);
+
+  // Per giorno della settimana
+  const byDay: { n: number; w: number; pnl: number }[] = DAYS.map(() => ({ n: 0, w: 0, pnl: 0 }));
+  for (const t of trades) {
+    const d = new Date(t.created_at).getDay();
+    if (d >= 0 && d < 7) {
+      byDay[d].n++;
+      if (Number(t.pnl) > 0) byDay[d].w++;
+      byDay[d].pnl += Number(t.pnl) || 0;
+    }
+  }
+
+  const money = (n: number) => `${n >= 0 ? "+" : ""}$${Math.round(n)}`;
+  return (
+    <View>
+      <View style={styles.advCard}>
+        <SectionLabel>Equity curve (trade reali)</SectionLabel>
+        <EquityChart data={equity} initial={0} />
+      </View>
+
+      <View style={styles.advCard}>
+        <SectionLabel>Per asset</SectionLabel>
+        {assets.map(([k, v]) => (
+          <View key={k} style={styles.advRow}>
+            <Text style={styles.advName}>{k}</Text>
+            <Text style={styles.advMetric}>{v.n} trade</Text>
+            <Text style={styles.advMetric}>{Math.round((v.w / v.n) * 100)}% WR</Text>
+            <Text style={[styles.advMetric, styles.advBold, { color: v.pnl >= 0 ? colors.green : colors.red }]}>
+              {money(v.pnl)}
+            </Text>
+          </View>
+        ))}
+      </View>
+
+      <View style={styles.advCard}>
+        <SectionLabel>Per giorno della settimana</SectionLabel>
+        {byDay.map((v, i) =>
+          v.n > 0 ? (
+            <View key={i} style={styles.advRow}>
+              <Text style={styles.advName}>{DAYS[i]}</Text>
+              <Text style={styles.advMetric}>{v.n} trade</Text>
+              <Text style={styles.advMetric}>{Math.round((v.w / v.n) * 100)}% WR</Text>
+              <Text style={[styles.advMetric, styles.advBold, { color: v.pnl >= 0 ? colors.green : colors.red }]}>
+                {money(v.pnl)}
+              </Text>
+            </View>
+          ) : null
+        )}
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
@@ -619,6 +705,14 @@ const styles = StyleSheet.create({
     marginBottom: space.lg,
   },
   handle: { width: 44, height: 4, backgroundColor: colors.black, alignSelf: "center", marginBottom: space.md },
+  advWrap: { paddingHorizontal: space.lg },
+  advToggle: { paddingVertical: space.sm },
+  advToggleTxt: { ...t.h3, color: colors.blue },
+  advCard: { ...hardBorder, backgroundColor: colors.white, padding: space.md, marginBottom: space.md },
+  advRow: { flexDirection: "row", alignItems: "center", borderTopWidth: 1, borderTopColor: colors.line, paddingVertical: 6 },
+  advName: { flex: 1.3, ...t.small, color: colors.black, fontWeight: "800" },
+  advMetric: { flex: 1, textAlign: "right", ...t.small, color: colors.ink },
+  advBold: { fontWeight: "900" },
   modalTitle: { ...t.h2, color: colors.black, marginBottom: space.sm },
   importHint: { ...t.small, color: colors.muted, marginBottom: space.md, lineHeight: 18 },
   importFile: { ...t.small, color: colors.green, fontWeight: "700", marginTop: space.sm },

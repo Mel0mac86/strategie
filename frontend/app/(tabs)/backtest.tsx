@@ -6,6 +6,7 @@ import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
 import { Badge, Button, Card, ChipRow, SectionLabel, Stat } from "@/components/ui";
 import { EquityChart } from "@/components/EquityChart";
+import { CandleChart } from "@/components/CandleChart";
 import { colors, fonts, hardBorder, space, type as t } from "@/theme";
 import { TIMEFRAMES, generateBars, parseCsv, Bar } from "@/backtest/data";
 import { runBacktest, BacktestResult } from "@/backtest/engine";
@@ -103,6 +104,7 @@ export default function BacktestScreen() {
   const [maResult, setMaResult] = useState<MultiAssetRow[] | null>(null);
   const [maRunning, setMaRunning] = useState(false);
   const [result, setResult] = useState<BacktestResult | null>(null);
+  const [lastBars, setLastBars] = useState<Bar[]>([]);
   const [running, setRunning] = useState(false);
   const [optResult, setOptResult] = useState<OptOutcome | null>(null);
   const [optimizing, setOptimizing] = useState(false);
@@ -338,6 +340,7 @@ export default function BacktestScreen() {
           slAtrMult: Number(slMult) || 1.5,
         });
         setResult(res);
+        setLastBars(data);
       } catch (e: any) {
         Alert.alert("Errore", e?.message || "Backtest fallito");
       } finally {
@@ -385,6 +388,7 @@ export default function BacktestScreen() {
             slAtrMult: item.config.slAtrMult,
           })
         );
+        setLastBars(data);
       } catch {
         /* ignore */
       }
@@ -601,6 +605,7 @@ export default function BacktestScreen() {
         <Results
           res={result}
           accountSize={Number(accountSize)}
+          bars={lastBars}
           meta={{
             strategyLabel: STRATEGIES.find((x) => x.value === strategyType)?.label || strategyType,
             timeframe,
@@ -672,7 +677,7 @@ export default function BacktestScreen() {
   );
 }
 
-function Results({ res, accountSize, meta }: { res: BacktestResult; accountSize: number; meta: BacktestMeta }) {
+function Results({ res, accountSize, bars, meta }: { res: BacktestResult; accountSize: number; bars: Bar[]; meta: BacktestMeta }) {
   const pnlColor = res.netPnl >= 0 ? colors.green : colors.red;
   return (
     <View style={{ marginTop: space.lg }}>
@@ -715,6 +720,13 @@ function Results({ res, accountSize, meta }: { res: BacktestResult; accountSize:
         <SectionLabel>Curva equity</SectionLabel>
         <EquityChart data={res.equityCurve} initial={accountSize} />
       </Card>
+
+      {bars && bars.length > 3 && (
+        <Card>
+          <SectionLabel>Grafico a candele + ingressi/uscite</SectionLabel>
+          <CandleChart bars={bars} trades={res.tradesList || []} />
+        </Card>
+      )}
 
       {res.tradesList && res.tradesList.length > 0 && <TradeList trades={res.tradesList} />}
 

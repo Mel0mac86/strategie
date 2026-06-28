@@ -18,6 +18,7 @@ export type BacktestParams = {
 
 export type BTTrade = {
   index: number;
+  exitIndex: number;
   dir: "long" | "short";
   entry: number;
   exit: number;
@@ -202,7 +203,7 @@ export function runBacktest(bars: Bar[], p: BacktestParams): BacktestResult {
     // aggiorna le serie consecutive per il sizing progressivo
     if (pnl > 0) { consecWins++; consecLosses = 0; }
     else if (pnl < 0) { consecLosses++; consecWins = 0; }
-    trades.push({ index: i + 1, dir: sig, entry, exit: exitPrice, rMultiple: rMult, pnl });
+    trades.push({ index: i + 1, exitIndex: Math.min(j, n - 1), dir: sig, entry, exit: exitPrice, rMultiple: rMult, pnl });
 
     // aggiorna picco/drawdown e FTMO
     peak = Math.max(peak, balance);
