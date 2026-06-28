@@ -81,6 +81,7 @@ export default function BacktestScreen() {
   const [csv, setCsv] = useState("");
   const [fileName, setFileName] = useState("");
   const [instrument, setInstrument] = useState("");
+  const [onlineBars, setOnlineBars] = useState("1000");
   const [apiKey, setApiKey] = useState("");
   const [downloading, setDownloading] = useState(false);
   const [dlInfo, setDlInfo] = useState("");
@@ -92,6 +93,7 @@ export default function BacktestScreen() {
   const [optResult, setOptResult] = useState<OptOutcome | null>(null);
   const [optimizing, setOptimizing] = useState(false);
   const [saved, setSaved] = useState<SavedBacktest[]>([]);
+  const [compareIds, setCompareIds] = useState<string[]>([]);
 
   const loadSaved = useCallback(async () => {
     setSaved((await storage.get<SavedBacktest[]>(SAVED_KEY)) || []);
@@ -129,7 +131,16 @@ export default function BacktestScreen() {
   async function deleteSaved(id: string) {
     const next = saved.filter((s) => s.id !== id);
     setSaved(next);
+    setCompareIds((c) => c.filter((x) => x !== id));
     await storage.set(SAVED_KEY, next);
+  }
+
+  function toggleCompare(id: string) {
+    setCompareIds((c) => {
+      if (c.includes(id)) return c.filter((x) => x !== id);
+      if (c.length >= 2) return [c[1], id]; // mantieni le ultime due
+      return [...c, id];
+    });
   }
 
   async function pickFile() {
@@ -206,7 +217,7 @@ export default function BacktestScreen() {
       if (inst.provider === "twelvedata" && apiKey.trim()) {
         await storage.set(API_KEY_STORE, apiKey.trim());
       }
-      const data = await downloadBars(inst, timeframe, apiKey.trim());
+      const data = await downloadBars(inst, timeframe, apiKey.trim(), Number(onlineBars) || 1000);
       if (data.length < 60) {
         setDlInfo("");
         Alert.alert("Pochi dati", `Ricevute solo ${data.length} barre. Prova un timeframe più basso.`);
@@ -432,7 +443,17 @@ export default function BacktestScreen() {
                 />
               </>
             )}
-            <View style={{ height: space.sm }} />
+            <SectionLabel>Quantità barre</SectionLabel>
+            <ChipRow
+              options={[
+                { label: "1000", value: "1000" },
+                { label: "2000", value: "2000" },
+                { label: "3000", value: "3000" },
+                { label: "5000", value: "5000" },
+              ]}
+              value={onlineBars}
+              onChange={setOnlineBars}
+            />
             <Button
               title={downloading ? "Scaricamento..." : "⬇️ Scarica dati"}
               variant="secondary"
@@ -525,29 +546,44 @@ export default function BacktestScreen() {
       {saved.length > 0 && (
         <View style={{ marginTop: space.xl }}>
           <SectionLabel>Backtest salvati ({saved.length})</SectionLabel>
-          {saved.map((s) => (
-            <View key={s.id} style={styles.savedRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.savedTitle}>
-                  {STRATEGIES.find((x) => x.value === s.strategyType)?.label || s.strategyType} ·{" "}
-                  {s.timeframe} · {s.asset}
-                </Text>
-                <Text style={styles.savedMeta}>
-                  {new Date(s.date).toLocaleDateString("it-IT")} · {s.source} · {s.trades} trade
-                </Text>
-                <Text style={styles.savedMetrics}>
-                  <Text style={{ color: s.netPnlPct >= 0 ? colors.green : colors.red, fontWeight: "900" }}>
-                    {s.netPnlPct >= 0 ? "+" : ""}{s.netPnlPct}%
-                  </Text>{" "}
-                  · WR {s.winRate}% · PF {s.profitFactor} · DD {s.maxDrawdownPct}%{" "}
-                  · {s.ftmoPassed ? "✓ FTMO" : "✕ FTMO"}
-                </Text>
+          <Text style={styles.hint}>
+            Tocca due risultati per confrontarli affiancati (A/B).
+          </Text>
+
+          {compareIds.length === 2 && (
+            <ABCompare
+              a={saved.find((s) => s.id === compareIds[0])!}
+              b={saved.find((s) => s.id === compareIds[1])!}
+            />
+          )}
+
+          {saved.map((s) => {
+            const sel = compareIds.indexOf(s.id);
+            return (
+              <View key={s.id} style={[styles.savedRow, sel >= 0 && { borderColor: colors.blue, borderWidth: 3 }]}>
+                <Pressable style={{ flex: 1 }} onPress={() => toggleCompare(s.id)}>
+                  <Text style={styles.savedTitle}>
+                    {sel >= 0 ? `[${sel === 0 ? "A" : "B"}] ` : ""}
+                    {STRATEGIES.find((x) => x.value === s.strategyType)?.label || s.strategyType} ·{" "}
+                    {s.timeframe} · {s.asset}
+                  </Text>
+                  <Text style={styles.savedMeta}>
+                    {new Date(s.date).toLocaleDateString("it-IT")} · {s.source} · {s.trades} trade
+                  </Text>
+                  <Text style={styles.savedMetrics}>
+                    <Text style={{ color: s.netPnlPct >= 0 ? colors.green : colors.red, fontWeight: "900" }}>
+                      {s.netPnlPct >= 0 ? "+" : ""}{s.netPnlPct}%
+                    </Text>{" "}
+                    · WR {s.winRate}% · PF {s.profitFactor} · DD {s.maxDrawdownPct}%{" "}
+                    · {s.ftmoPassed ? "✓ FTMO" : "✕ FTMO"}
+                  </Text>
+                </Pressable>
+                <Pressable hitSlop={10} onPress={() => deleteSaved(s.id)} style={{ padding: space.sm }}>
+                  <Ionicons name="trash-outline" size={18} color={colors.red} />
+                </Pressable>
               </View>
-              <Pressable hitSlop={10} onPress={() => deleteSaved(s.id)} style={{ padding: space.sm }}>
-                <Ionicons name="trash-outline" size={18} color={colors.red} />
-              </Pressable>
-            </View>
-          ))}
+            );
+          })}
         </View>
       )}
       <View style={{ height: 40 }} />
@@ -647,6 +683,40 @@ function Mini({ label, value, accent }: { label: string; value: string; accent?:
 
 function stratLabel(v: string) {
   return STRATEGIES.find((x) => x.value === v)?.label || v;
+}
+
+function ABCompare({ a, b }: { a: SavedBacktest; b: SavedBacktest }) {
+  if (!a || !b) return null;
+  const row = (label: string, av: number, bv: number, higherBetter: boolean, suffix = "") => {
+    const aBetter = av === bv ? 0 : higherBetter ? (av > bv ? 1 : -1) : av < bv ? 1 : -1;
+    return (
+      <View style={styles.cmpRow}>
+        <Text style={styles.cmpLabel}>{label}</Text>
+        <Text style={[styles.cmpVal, aBetter === 1 && styles.cmpWin]}>{av}{suffix}</Text>
+        <Text style={[styles.cmpVal, aBetter === -1 && styles.cmpWin]}>{bv}{suffix}</Text>
+      </View>
+    );
+  };
+  return (
+    <Card style={{ backgroundColor: colors.white }}>
+      <SectionLabel>Confronto A / B</SectionLabel>
+      <View style={styles.cmpRow}>
+        <Text style={styles.cmpLabel} />
+        <Text style={[styles.cmpVal, styles.cmpHead]}>A · {stratLabel(a.strategyType)} {a.timeframe}</Text>
+        <Text style={[styles.cmpVal, styles.cmpHead]}>B · {stratLabel(b.strategyType)} {b.timeframe}</Text>
+      </View>
+      {row("Rendimento", a.netPnlPct, b.netPnlPct, true, "%")}
+      {row("Win rate", a.winRate, b.winRate, true, "%")}
+      {row("Profit factor", a.profitFactor, b.profitFactor, true)}
+      {row("Max drawdown", a.maxDrawdownPct, b.maxDrawdownPct, false, "%")}
+      {row("Trade", a.trades, b.trades, true)}
+      <View style={styles.cmpRow}>
+        <Text style={styles.cmpLabel}>Esito FTMO</Text>
+        <Text style={[styles.cmpVal, a.ftmoPassed && styles.cmpWin]}>{a.ftmoPassed ? "✓" : "✕"}</Text>
+        <Text style={[styles.cmpVal, b.ftmoPassed && styles.cmpWin]}>{b.ftmoPassed ? "✓" : "✕"}</Text>
+      </View>
+    </Card>
+  );
 }
 
 function OptResults({ out, onApply }: { out: OptOutcome; onApply: (i: OptItem) => void }) {
@@ -804,6 +874,11 @@ const styles = StyleSheet.create({
   savedTitle: { ...t.h3, color: colors.black },
   savedMeta: { ...t.label, color: colors.muted, marginTop: 2 },
   savedMetrics: { ...t.small, color: colors.ink, marginTop: 4 },
+  cmpRow: { flexDirection: "row", alignItems: "center", borderTopWidth: 1, borderTopColor: colors.line, paddingVertical: 7 },
+  cmpLabel: { flex: 1.2, ...t.small, color: colors.muted, fontWeight: "700" },
+  cmpVal: { flex: 1, textAlign: "center", fontSize: 13, fontWeight: "800", color: colors.ink },
+  cmpWin: { color: colors.green },
+  cmpHead: { fontSize: 11, color: colors.black },
   optHint: { ...t.small, color: colors.muted, marginTop: space.sm, lineHeight: 17 },
   warn: { ...t.small, color: colors.red, marginTop: space.sm, lineHeight: 18, fontWeight: "700" },
   tradesHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },

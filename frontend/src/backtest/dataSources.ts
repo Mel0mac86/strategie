@@ -47,23 +47,38 @@ const TD_TF: Record<string, string> = {
   M5: "5min", M15: "15min", M30: "30min", H1: "1h", H4: "4h", D1: "1day",
 };
 
-async function fetchBinance(symbol: string, tf: string, limit = 1000): Promise<Bar[]> {
+const BINANCE_BASE = "https://data-api.binance.vision/api/v3/klines";
+
+// Endpoint dati pubblico Binance (keyless, CORS, non geo-bloccato).
+// Binance restituisce max 1000 barre/richiesta: paginiamo all'indietro con endTime.
+async function fetchBinance(symbol: string, tf: string, count = 1000): Promise<Bar[]> {
   const interval = BINANCE_TF[tf] || "1h";
-  // Endpoint dati pubblico Binance (market data, keyless, CORS, non geo-bloccato).
-  const url = `https://data-api.binance.vision/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${Math.min(limit, 1000)}`;
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`Binance ha risposto ${r.status}`);
-  const arr = await r.json();
-  if (!Array.isArray(arr)) throw new Error("Risposta Binance non valida");
-  return arr.map((k: any[]) => ({
-    time: Number(k[0]),
-    open: +k[1], high: +k[2], low: +k[3], close: +k[4], volume: +k[5],
-  }));
+  const target = Math.min(Math.max(count, 100), 6000);
+  const bySec: Record<number, Bar> = {};
+  let endTime: number | undefined;
+  let guard = 0;
+  while (Object.keys(bySec).length < target && guard < 8) {
+    guard++;
+    const limit = Math.min(1000, target - Object.keys(bySec).length);
+    let url = `${BINANCE_BASE}?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+    if (endTime) url += `&endTime=${endTime}`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`Binance ha risposto ${r.status}`);
+    const arr = await r.json();
+    if (!Array.isArray(arr) || arr.length === 0) break;
+    for (const k of arr as any[][]) {
+      bySec[Number(k[0])] = { time: Number(k[0]), open: +k[1], high: +k[2], low: +k[3], close: +k[4], volume: +k[5] };
+    }
+    endTime = Number(arr[0][0]) - 1; // più indietro nel tempo
+    if (arr.length < limit) break; // storia esaurita
+  }
+  return Object.values(bySec).sort((a, b) => a.time - b.time);
 }
 
-async function fetchTwelveData(symbol: string, tf: string, apiKey: string, outputsize = 1000): Promise<Bar[]> {
+async function fetchTwelveData(symbol: string, tf: string, apiKey: string, count = 1000): Promise<Bar[]> {
   if (!apiKey) throw new Error("NO_KEY");
   const interval = TD_TF[tf] || "1h";
+  const outputsize = Math.min(Math.max(count, 100), 5000); // free tier: max 5000
   const url =
     `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(symbol)}` +
     `&interval=${interval}&outputsize=${outputsize}&format=JSON&apikey=${encodeURIComponent(apiKey)}`;
@@ -83,11 +98,11 @@ async function fetchTwelveData(symbol: string, tf: string, apiKey: string, outpu
     }));
 }
 
-export async function downloadBars(inst: Instrument, tf: string, apiKey: string): Promise<Bar[]> {
+export async function downloadBars(inst: Instrument, tf: string, apiKey: string, count = 1000): Promise<Bar[]> {
   const bars =
     inst.provider === "binance"
-      ? await fetchBinance(inst.symbol, tf)
-      : await fetchTwelveData(inst.symbol, tf, apiKey);
+      ? await fetchBinance(inst.symbol, tf, count)
+      : await fetchTwelveData(inst.symbol, tf, apiKey, count);
   // pulizia: scarta barre non valide
   return bars.filter((b) => isFinite(b.close) && isFinite(b.high) && isFinite(b.low) && b.high > 0);
 }

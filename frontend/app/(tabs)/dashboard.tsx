@@ -14,6 +14,7 @@ import {
   Modal,
   Pressable,
   ActivityIndicator,
+  Platform,
 } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { colors, space, fonts, hardBorder, type as t } from "@/theme";
@@ -65,6 +66,34 @@ function riskMeta(color: ChallengeProgress["risk_color"]): {
   if (color === "yellow")
     return { color: colors.yellow, soft: colors.yellowSoft, label: "MEDIO" };
   return { color: colors.green, soft: colors.greenSoft, label: "BASSO" };
+}
+
+type FtmoAlert = { level: "critical" | "warning" | "good"; title: string; body: string };
+
+/** Genera gli alert sulle regole FTMO in base allo stato live della challenge. */
+function computeAlerts(p: ChallengeProgress): FtmoAlert[] {
+  const out: FtmoAlert[] = [];
+  if (p.overall_limit_breached)
+    out.push({ level: "critical", title: "⛔ LIMITE TOTALE -10% SUPERATO", body: "Challenge fallita: drawdown massimo complessivo violato." });
+  if (p.daily_limit_breached)
+    out.push({ level: "critical", title: "⛔ LIMITE GIORNALIERO -5% SUPERATO", body: "Challenge fallita: perdita giornaliera oltre il limite." });
+
+  if (!p.daily_limit_breached && !p.overall_limit_breached) {
+    const dailyUsed = p.max_daily_loss > 0 ? p.daily_loss / p.max_daily_loss : 0;
+    const overallUsed = p.max_overall_loss > 0 ? p.overall_drawdown / p.max_overall_loss : 0;
+    if (dailyUsed >= 0.8)
+      out.push({ level: "critical", title: "🚨 Stop per oggi", body: `Hai usato il ${Math.round(dailyUsed * 100)}% del limite giornaliero. Restano ${money(p.remaining_to_daily_limit)}: smetti di tradare.` });
+    else if (dailyUsed >= 0.5)
+      out.push({ level: "warning", title: "⚠️ Attenzione perdita giornaliera", body: `${Math.round(dailyUsed * 100)}% del limite -5% usato. Riduci il rischio.` });
+    if (overallUsed >= 0.8)
+      out.push({ level: "critical", title: "🚨 Vicino al limite totale", body: `${Math.round(overallUsed * 100)}% del drawdown massimo. Restano ${money(p.remaining_to_overall_limit)}.` });
+    else if (overallUsed >= 0.5)
+      out.push({ level: "warning", title: "⚠️ Drawdown complessivo in crescita", body: `${Math.round(overallUsed * 100)}% del limite -10% usato.` });
+  }
+
+  if (p.target_reached)
+    out.push({ level: "good", title: "🎉 Target raggiunto!", body: "Hai centrato l'obiettivo di profitto: valuta di fermarti e proteggere il risultato." });
+  return out;
 }
 
 export default function DashboardScreen() {
@@ -401,20 +430,65 @@ function LiveTracking(props: {
   const pnlColor = pnlPositive ? colors.green : colors.red;
   const targetPct = Math.max(0, Math.min(100, progress.progress_to_target_pct));
   const risk = riskMeta(progress.risk_color);
-  const breached =
-    progress.daily_limit_breached || progress.overall_limit_breached;
+
+  const alerts = computeAlerts(progress);
+  const [notifOn, setNotifOn] = useState(false);
+
+  // Notifica web quando compare un nuovo alert critico/positivo (PWA iOS 16.4+).
+  const topSig = alerts.length ? `${alerts[0].level}:${alerts[0].title}` : "";
+  useEffect(() => {
+    if (!notifOn || Platform.OS !== "web" || !topSig) return;
+    const top = alerts[0];
+    if (top.level === "warning") return; // notifica solo critici e target
+    try {
+      const N: any = (globalThis as any).Notification;
+      if (N && N.permission === "granted") new N(top.title, { body: top.body });
+    } catch {
+      /* notifiche non supportate */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topSig, notifOn]);
+
+  async function enableNotif() {
+    if (Platform.OS !== "web") {
+      Alert.alert("Notifiche", "Sul web/PWA: gli avvisi compaiono qui e come notifica del sistema (iPhone: app aggiunta alla Home, iOS 16.4+).");
+      return;
+    }
+    try {
+      const N: any = (globalThis as any).Notification;
+      if (!N) {
+        Alert.alert("Non supportato", "Il browser non supporta le notifiche. Gli alert restano visibili qui nella dashboard.");
+        return;
+      }
+      const perm = N.permission === "granted" ? "granted" : await N.requestPermission();
+      if (perm === "granted") {
+        setNotifOn(true);
+        new N("Notifiche FTMO attive", { body: "Ti avviserò quando ti avvicini ai limiti." });
+      } else {
+        Alert.alert("Permesso negato", "Attiva le notifiche dalle impostazioni del browser per riceverle.");
+      }
+    } catch {
+      Alert.alert("Errore", "Impossibile attivare le notifiche.");
+    }
+  }
 
   return (
     <>
-      {breached ? (
-        <View style={styles.alertBanner}>
-          <Text style={styles.alertText}>⚠ LIMITE FTMO VIOLATO</Text>
-          <Text style={styles.alertSub}>
-            {progress.daily_limit_breached && "Limite di perdita giornaliero superato. "}
-            {progress.overall_limit_breached && "Drawdown massimo complessivo superato."}
-          </Text>
-        </View>
-      ) : null}
+      {alerts.map((al, i) => {
+        const bg = al.level === "critical" ? colors.red : al.level === "good" ? colors.green : colors.yellow;
+        return (
+          <View key={i} style={[styles.alertBanner, { backgroundColor: bg, borderColor: bg }]}>
+            <Text style={styles.alertText}>{al.title}</Text>
+            <Text style={styles.alertSub}>{al.body}</Text>
+          </View>
+        );
+      })}
+
+      <Pressable onPress={enableNotif} style={styles.notifBtn}>
+        <Text style={styles.notifTxt}>
+          {notifOn ? "🔔 Notifiche FTMO attive" : "🔔 Attiva avvisi FTMO"}
+        </Text>
+      </Pressable>
 
       {/* HERO */}
       <View style={styles.hero}>
@@ -682,6 +756,14 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginTop: space.xs,
   },
+  notifBtn: {
+    ...hardBorder,
+    backgroundColor: colors.white,
+    paddingVertical: 10,
+    alignItems: "center",
+    marginBottom: space.lg,
+  },
+  notifTxt: { ...t.h3, color: colors.black },
 
   // Azioni
   actions: { marginTop: space.sm, marginBottom: space.xl },
