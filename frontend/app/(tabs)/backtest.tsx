@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import { ScrollView, Text, View, StyleSheet, TextInput, Alert, Platform, Pressable } from "react-native";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -9,8 +9,11 @@ import { EquityChart } from "@/components/EquityChart";
 import { colors, fonts, hardBorder, space, type as t } from "@/theme";
 import { TIMEFRAMES, generateBars, parseCsv, Bar } from "@/backtest/data";
 import { runBacktest, BacktestResult } from "@/backtest/engine";
-import { optimize, OptOutcome, OptItem } from "@/backtest/optimizer";
+import { optimize, walkForward, OptOutcome, OptItem, WFOutcome } from "@/backtest/optimizer";
+import { instrumentsFor, downloadBars } from "@/backtest/dataSources";
 import { storage } from "@/utils/storage";
+
+const API_KEY_STORE = "store:twelvedata_key";
 
 const SAVED_KEY = "store:backtests";
 type SavedBacktest = {
@@ -73,10 +76,17 @@ export default function BacktestScreen() {
   const [cost, setCost] = useState("5");
   const [sizing, setSizing] = useState<"fixed" | "martingale" | "antimartingale">("fixed");
   const [sizeMult, setSizeMult] = useState("2");
-  const [source, setSource] = useState<"sim" | "csv">("sim");
+  const [source, setSource] = useState<"sim" | "csv" | "online">("sim");
   const [bars, setBars] = useState("1500");
   const [csv, setCsv] = useState("");
   const [fileName, setFileName] = useState("");
+  const [instrument, setInstrument] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [downloading, setDownloading] = useState(false);
+  const [dlInfo, setDlInfo] = useState("");
+  const downloadedRef = useRef<Bar[] | null>(null);
+  const [wfResult, setWfResult] = useState<WFOutcome | null>(null);
+  const [wfRunning, setWfRunning] = useState(false);
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [running, setRunning] = useState(false);
   const [optResult, setOptResult] = useState<OptOutcome | null>(null);
@@ -85,6 +95,8 @@ export default function BacktestScreen() {
 
   const loadSaved = useCallback(async () => {
     setSaved((await storage.get<SavedBacktest[]>(SAVED_KEY)) || []);
+    const k = await storage.get<string>(API_KEY_STORE);
+    if (k) setApiKey(k);
   }, []);
   useFocusEffect(
     useCallback(() => {
@@ -100,7 +112,7 @@ export default function BacktestScreen() {
       strategyType,
       timeframe,
       asset,
-      source: source === "csv" ? "CSV" : "Simulato",
+      source: source === "csv" ? "CSV" : source === "online" ? "Online" : "Simulato",
       netPnlPct: result.netPnlPct,
       winRate: result.winRate,
       profitFactor: result.profitFactor,
@@ -152,8 +164,16 @@ export default function BacktestScreen() {
     }
   }
 
-  // Carica i dati (CSV o simulati); ritorna null se insufficienti.
+  // Carica i dati (online, CSV o simulati); ritorna null se insufficienti.
   function loadData(): Bar[] | null {
+    if (source === "online") {
+      const data = downloadedRef.current;
+      if (!data || data.length < 60) {
+        Alert.alert("Scarica i dati", "Premi prima \"Scarica dati\" per ottenere lo storico online.");
+        return null;
+      }
+      return data;
+    }
     if (source === "csv") {
       const data = parseCsv(csv);
       if (data.length < 60) {
@@ -167,6 +187,60 @@ export default function BacktestScreen() {
     }
     const count = Math.max(300, Math.min(20000, Number(bars) || 1500));
     return generateBars(asset, timeframe, count);
+  }
+
+  async function download() {
+    const list = instrumentsFor(asset);
+    const inst = list.find((x) => x.symbol === instrument) || list[0];
+    if (!inst) return;
+    if (inst.provider === "twelvedata" && !apiKey.trim()) {
+      Alert.alert(
+        "Chiave richiesta",
+        "Per Forex/Metalli/Indici serve una chiave gratuita Twelve Data (twelvedata.com). Incollala nel campo, oppure scegli una crypto (Binance, senza chiave)."
+      );
+      return;
+    }
+    setDownloading(true);
+    setDlInfo("");
+    try {
+      if (inst.provider === "twelvedata" && apiKey.trim()) {
+        await storage.set(API_KEY_STORE, apiKey.trim());
+      }
+      const data = await downloadBars(inst, timeframe, apiKey.trim());
+      if (data.length < 60) {
+        setDlInfo("");
+        Alert.alert("Pochi dati", `Ricevute solo ${data.length} barre. Prova un timeframe più basso.`);
+        return;
+      }
+      downloadedRef.current = data;
+      setDlInfo(`✓ ${inst.label} ${timeframe}: ${data.length} barre scaricate`);
+    } catch (e: any) {
+      const msg = e?.message === "NO_KEY" ? "Chiave Twelve Data mancante." : e?.message || "Download fallito";
+      Alert.alert("Errore download", `${msg}\n\nSuggerimento: le crypto (Binance) funzionano senza chiave.`);
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  function runWalkForward() {
+    setWfRunning(true);
+    setWfResult(null);
+    setResult(null);
+    setOptResult(null);
+    setTimeout(() => {
+      try {
+        const data = loadData();
+        if (!data) return;
+        const wf = walkForward(data, baseParams(), {
+          strategies: ["trend_pullback", "session_breakout", "xau_scalper", "mean_reversion"],
+        });
+        setWfResult(wf);
+      } catch (e: any) {
+        Alert.alert("Errore", e?.message || "Walk-forward fallito");
+      } finally {
+        setWfRunning(false);
+      }
+    }, 30);
   }
 
   function baseParams() {
@@ -186,6 +260,7 @@ export default function BacktestScreen() {
     setRunning(true);
     setResult(null);
     setOptResult(null);
+    setWfResult(null);
     setTimeout(() => {
       try {
         const data = loadData();
@@ -209,6 +284,7 @@ export default function BacktestScreen() {
     setOptimizing(true);
     setOptResult(null);
     setResult(null);
+    setWfResult(null);
     setTimeout(() => {
       try {
         const data = loadData();
@@ -328,22 +404,60 @@ export default function BacktestScreen() {
         <SectionLabel>Sorgente dati</SectionLabel>
         <ChipRow
           options={[
-            { label: "Dati simulati", value: "sim" },
+            { label: "Scarica online", value: "online" },
             { label: "Importa CSV", value: "csv" },
+            { label: "Dati simulati", value: "sim" },
           ]}
           value={source}
-          onChange={(v) => setSource(v as "sim" | "csv")}
+          onChange={(v) => setSource(v as "sim" | "csv" | "online")}
         />
-        {source === "sim" ? (
+        {source === "online" && (
+          <>
+            <SectionLabel>Strumento ({asset})</SectionLabel>
+            <ChipRow
+              options={instrumentsFor(asset).map((x) => ({ label: x.label, value: x.symbol }))}
+              value={instrument || instrumentsFor(asset)[0]?.symbol || ""}
+              onChange={setInstrument}
+            />
+            {instrumentsFor(asset).some((x) => x.provider === "twelvedata") && (
+              <>
+                <SectionLabel>Chiave Twelve Data (gratuita)</SectionLabel>
+                <TextInput
+                  style={styles.input}
+                  value={apiKey}
+                  onChangeText={setApiKey}
+                  placeholder="incolla la chiave (solo Forex/Metalli/Indici)"
+                  placeholderTextColor={colors.muted}
+                  autoCapitalize="none"
+                />
+              </>
+            )}
+            <View style={{ height: space.sm }} />
+            <Button
+              title={downloading ? "Scaricamento..." : "⬇️ Scarica dati"}
+              variant="secondary"
+              onPress={download}
+              loading={downloading}
+            />
+            {dlInfo ? <Text style={styles.fileName}>{dlInfo}</Text> : null}
+            <Text style={styles.hint}>
+              Crypto via Binance (senza chiave). Forex/Metalli/Indici via Twelve Data: crea una
+              chiave gratuita su twelvedata.com e incollala una volta (resta salvata). Poi premi
+              Esegui/Ottimizza/Walk-forward.
+            </Text>
+          </>
+        )}
+        {source === "sim" && (
           <>
             <SectionLabel>Numero di barre</SectionLabel>
             <TextInput style={styles.input} value={bars} onChangeText={setBars} keyboardType="numeric" />
             <Text style={styles.hint}>
               I dati simulati servono per una prova rapida del comportamento della strategia, non
-              rappresentano il mercato reale. Per risultati reali usa "Importa CSV".
+              rappresentano il mercato reale. Per risultati reali usa "Scarica online" o "Importa CSV".
             </Text>
           </>
-        ) : (
+        )}
+        {source === "csv" && (
           <>
             <Button title="📂 Carica file .csv" variant="secondary" onPress={pickFile} />
             {fileName ? (
@@ -383,12 +497,20 @@ export default function BacktestScreen() {
         loading={optimizing}
         style={{ marginTop: space.sm }}
       />
+      <Button
+        title={wfRunning ? "Walk-forward..." : "🔁 Walk-forward (validazione robusta)"}
+        variant="secondary"
+        onPress={runWalkForward}
+        loading={wfRunning}
+        style={{ marginTop: space.sm }}
+      />
       <Text style={styles.optHint}>
-        Cerca la combinazione migliore di strategia + RR + stop su una parte dei dati e la valida
-        sui dati NON visti (out-of-sample): i numeri mostrati sono quelli realistici.
+        Ottimizza: trova la config migliore validata out-of-sample. Walk-forward: la testa su più
+        finestre temporali consecutive, per vedere se regge nel tempo (anti-overfitting).
       </Text>
 
       {optResult && <OptResults out={optResult} onApply={applyConfig} />}
+      {wfResult && <WFResults wf={wfResult} />}
 
       {result && <Results res={result} accountSize={Number(accountSize)} />}
       {result && (
@@ -472,12 +594,45 @@ function Results({ res, accountSize }: { res: BacktestResult; accountSize: numbe
         <EquityChart data={res.equityCurve} initial={accountSize} />
       </Card>
 
+      {res.tradesList && res.tradesList.length > 0 && <TradeList trades={res.tradesList} />}
+
       {res.note ? <Text style={styles.note}>{res.note}</Text> : null}
       <Text style={styles.disclaimer}>
         ⚠️ Backtest illustrativo: usa la stessa logica dell'EA (ATR stop, ingresso alla barra
         successiva, una posizione per volta). I risultati passati non garantiscono quelli futuri.
       </Text>
     </View>
+  );
+}
+
+function TradeList({ trades }: { trades: NonNullable<BacktestResult["tradesList"]> }) {
+  const [open, setOpen] = useState(false);
+  const shown = open ? trades : trades.slice(-8);
+  const fmt = (n: number) => (Math.abs(n) >= 100 ? n.toFixed(2) : n.toFixed(n < 1 ? 5 : 2));
+  return (
+    <Card>
+      <Pressable onPress={() => setOpen((o) => !o)} style={styles.tradesHeader}>
+        <SectionLabel>Operazioni ({trades.length}{trades.length >= 50 ? " ultime" : ""})</SectionLabel>
+        <Ionicons name={open ? "chevron-up" : "chevron-down"} size={18} color={colors.black} />
+      </Pressable>
+      {shown.map((tr, i) => (
+        <View key={i} style={styles.tradeRow}>
+          <View style={[styles.dirBadge, { backgroundColor: tr.dir === "long" ? colors.green : colors.red }]}>
+            <Text style={styles.dirTxt}>{tr.dir === "long" ? "L" : "S"}</Text>
+          </View>
+          <Text style={styles.tradepx}>{fmt(tr.entry)} → {fmt(tr.exit)}</Text>
+          <Text style={[styles.tradeR, { color: tr.rMultiple >= 0 ? colors.green : colors.red }]}>
+            {tr.rMultiple >= 0 ? "+" : ""}{tr.rMultiple.toFixed(2)}R
+          </Text>
+          <Text style={[styles.tradePnl, { color: tr.pnl >= 0 ? colors.green : colors.red }]}>
+            {tr.pnl >= 0 ? "+" : ""}${tr.pnl.toFixed(0)}
+          </Text>
+        </View>
+      ))}
+      {!open && trades.length > 8 && (
+        <Text style={styles.tradesMore}>Tocca per vedere tutte le {trades.length} operazioni</Text>
+      )}
+    </Card>
   );
 }
 
@@ -578,6 +733,60 @@ function OptResults({ out, onApply }: { out: OptOutcome; onApply: (i: OptItem) =
   );
 }
 
+function WFResults({ wf }: { wf: WFOutcome }) {
+  const ok = wf.passRate >= 50;
+  return (
+    <View style={{ marginTop: space.lg }}>
+      <View style={[styles.verdict, { backgroundColor: ok ? colors.green : colors.red }]}>
+        <Text style={styles.verdictTxt}>🔁 WALK-FORWARD</Text>
+        <Text style={styles.verdictSub}>
+          {wf.totalWindows} finestre · {wf.robustWindows} robuste · {wf.passRate}% profittevoli
+        </Text>
+      </View>
+
+      <View style={styles.bento}>
+        <Mini label="P&L medio OOS" value={`${wf.oosNetPnlPct}%`} accent={wf.oosNetPnlPct >= 0 ? colors.green : colors.red} />
+        <Mini label="Win rate OOS" value={`${wf.oosWinRate}%`} accent={colors.blue} />
+      </View>
+      <View style={styles.bento}>
+        <Mini label="Profit factor" value={String(wf.oosProfitFactor)} accent={wf.oosProfitFactor >= 1 ? colors.green : colors.red} />
+        <Mini label="Max DD" value={`${wf.oosMaxDD}%`} accent={wf.oosMaxDD > 10 ? colors.red : colors.yellow} />
+      </View>
+
+      <Card>
+        <SectionLabel>Finestre (out-of-sample)</SectionLabel>
+        {wf.windows.map((w, i) => (
+          <View key={i} style={styles.rankRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rankTitle}>
+                #{w.index} {w.config ? stratLabel(w.config.strategyType) : "—"}
+                {w.config ? ` · RR ${w.config.rr} · SL ${w.config.slAtrMult}×` : ""}
+              </Text>
+              <Text style={styles.rankMetrics}>
+                {w.test ? (
+                  <Text style={{ color: w.test.netPnlPct >= 0 ? colors.green : colors.red, fontWeight: "900" }}>
+                    {w.test.netPnlPct >= 0 ? "+" : ""}{w.test.netPnlPct}%
+                  </Text>
+                ) : (
+                  <Text>—</Text>
+                )}
+                {w.test ? ` · WR ${w.test.winRate}% · ${w.test.trades} trade` : ""}
+              </Text>
+            </View>
+          </View>
+        ))}
+      </Card>
+
+      <Text style={styles.disclaimer}>
+        Il walk-forward riottimizza i parametri su ogni finestra di training e li misura sulla
+        finestra successiva (mai vista). Una % alta di finestre profittevoli = parametri solidi nel
+        tempo; bassa = overfitting.
+      </Text>
+      {wf.note ? <Text style={styles.optNote}>{wf.note}</Text> : null}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.paper },
   content: { padding: space.lg, paddingBottom: 48 },
@@ -597,6 +806,14 @@ const styles = StyleSheet.create({
   savedMetrics: { ...t.small, color: colors.ink, marginTop: 4 },
   optHint: { ...t.small, color: colors.muted, marginTop: space.sm, lineHeight: 17 },
   warn: { ...t.small, color: colors.red, marginTop: space.sm, lineHeight: 18, fontWeight: "700" },
+  tradesHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  tradeRow: { flexDirection: "row", alignItems: "center", borderTopWidth: 1, borderTopColor: colors.line, paddingVertical: 6 },
+  dirBadge: { width: 20, height: 20, alignItems: "center", justifyContent: "center", marginRight: space.sm },
+  dirTxt: { color: colors.white, fontSize: 11, fontWeight: "900" },
+  tradepx: { flex: 1, fontFamily: fonts.mono, fontSize: 12, color: colors.ink },
+  tradeR: { width: 58, textAlign: "right", fontSize: 12, fontWeight: "700" },
+  tradePnl: { width: 64, textAlign: "right", fontSize: 12, fontWeight: "900" },
+  tradesMore: { ...t.small, color: colors.blue, marginTop: space.sm, textAlign: "center" },
   optBestTitle: { ...t.h2, color: colors.black, flex: 1 },
   optParams: { ...t.body, color: colors.blue, fontWeight: "800", marginBottom: space.md },
   optSectionTitle: { ...t.label, color: colors.muted, textTransform: "uppercase", marginBottom: space.sm },
