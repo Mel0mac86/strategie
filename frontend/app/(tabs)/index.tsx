@@ -29,6 +29,7 @@ const ASSETS = [
   { label: "Forex", value: "forex" },
   { label: "Indici", value: "indices" },
   { label: "Metalli", value: "metals" },
+  { label: "Crypto", value: "crypto" },
   { label: "Misto", value: "mixed" },
 ];
 const RISK = [
@@ -155,7 +156,8 @@ export default function GeneratorScreen() {
         loading={loading}
       />
       <Text style={styles.footnote}>
-        Ogni strategia viene salvata automaticamente nello Storico.
+        Ogni strategia viene salvata nello Storico e backtestata su dati reali (crypto in
+        automatico; per Forex/Metalli/Indici aggiungi la chiave Twelve Data nel Backtest).
       </Text>
     </ScrollView>
   );

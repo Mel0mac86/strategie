@@ -17,6 +17,7 @@ const ASSET_LABELS: Record<string, string> = {
   forex: "Forex (major)",
   indices: "Indici (US30, NAS100, GER40)",
   metals: "Metalli (XAUUSD, XAGUSD)",
+  crypto: "Crypto (BTC, ETH)",
   mixed: "Misto",
 };
 const STYLE_LABELS: Record<string, string> = {

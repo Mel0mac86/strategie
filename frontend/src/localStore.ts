@@ -12,7 +12,18 @@ import {
 } from "@/localEngine";
 import { generateEa } from "@/localEa";
 import { generateAiStrategy } from "@/aiStrategy";
+import { realValidate } from "@/realValidate";
 import type { Strategy, Trade } from "@/api";
+
+/** Sovrascrive le metriche attese con un backtest su dati REALI, se disponibili. */
+async function withRealBacktest(s: Strategy, req: Record<string, any>): Promise<Strategy> {
+  const rv = await realValidate(req);
+  if (rv) {
+    s.expected = rv.expected;
+    s.risk_management = { ...s.risk_management, min_rr: rv.minRr };
+  }
+  return s;
+}
 
 const K_STRAT = "store:strategies";
 const K_TRADES = "store:trades";
@@ -22,15 +33,16 @@ const K_CHALLENGES = "store:challenges";
 export const localStore = {
   // -------- Strategie --------
   async generateStrategy(req: Record<string, any>): Promise<Strategy> {
-    const s = buildLocalStrategy(req);
+    const s = await withRealBacktest(buildLocalStrategy(req), req);
     const list = (await storage.get<Strategy[]>(K_STRAT)) || [];
     list.unshift(s);
     await storage.set(K_STRAT, list);
     return s;
   },
   // AI gratuita lato client (endpoint LLM keyless), con fallback locale.
+  // La strategia proposta viene poi backtestata su dati reali.
   async generateAiStrategy(req: Record<string, any>): Promise<Strategy> {
-    const s = await generateAiStrategy(req);
+    const s = await withRealBacktest(await generateAiStrategy(req), req);
     const list = (await storage.get<Strategy[]>(K_STRAT)) || [];
     list.unshift(s);
     await storage.set(K_STRAT, list);
