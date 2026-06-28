@@ -157,17 +157,10 @@ export const api = {
   localOnly: LOCAL_ONLY,
 
   generateStrategy: (body: Record<string, any>) =>
-    // In modalità locale, o senza backend, genera direttamente sul dispositivo.
-    body.mode === "local"
-      ? localStore.generateStrategy(body)
-      : withFallback(
-          () =>
-            request<Strategy>("/api/strategy/generate", {
-              method: "POST",
-              body: JSON.stringify(body),
-            }),
-          () => localStore.generateStrategy(body)
-        ),
+    // Tutto lato client: modalità AI gratuita (LLM keyless) o template locale.
+    body.mode === "ai"
+      ? localStore.generateAiStrategy(body)
+      : localStore.generateStrategy(body),
   listStrategies: () =>
     withFallback(() => request<Strategy[]>("/api/strategy"), () => localStore.listStrategies()),
   getStrategy: (id: string) =>

@@ -11,6 +11,7 @@ import {
   uid,
 } from "@/localEngine";
 import { generateEa } from "@/localEa";
+import { generateAiStrategy } from "@/aiStrategy";
 import type { Strategy, Trade } from "@/api";
 
 const K_STRAT = "store:strategies";
@@ -22,6 +23,14 @@ export const localStore = {
   // -------- Strategie --------
   async generateStrategy(req: Record<string, any>): Promise<Strategy> {
     const s = buildLocalStrategy(req);
+    const list = (await storage.get<Strategy[]>(K_STRAT)) || [];
+    list.unshift(s);
+    await storage.set(K_STRAT, list);
+    return s;
+  },
+  // AI gratuita lato client (endpoint LLM keyless), con fallback locale.
+  async generateAiStrategy(req: Record<string, any>): Promise<Strategy> {
+    const s = await generateAiStrategy(req);
     const list = (await storage.get<Strategy[]>(K_STRAT)) || [];
     list.unshift(s);
     await storage.set(K_STRAT, list);

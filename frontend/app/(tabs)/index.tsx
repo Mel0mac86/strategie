@@ -115,14 +115,14 @@ export default function GeneratorScreen() {
         <ModeButton
           active={mode === "ai"}
           title="Modalità AI"
-          subtitle="Più personalizzata"
+          subtitle="Gratis · personalizzata"
           onPress={() => setMode("ai")}
         />
       </View>
       {mode === "ai" && (
         <Text style={styles.aiHint}>
-          Claude Sonnet 4.5 · ~25-40s. Se la chiave AI non è disponibile, fallback
-          automatico sul template locale.
+          AI gratuita, nessuna chiave richiesta · ~10-30s. Richiede connessione internet;
+          se non disponibile, fallback automatico sul template locale.
         </Text>
       )}
 

@@ -68,7 +68,7 @@ export default function StrategyDetail() {
       <Card style={{ backgroundColor: colors.black }}>
         <View style={styles.heroTop}>
           <Badge
-            text={s.generated_by === "ai" ? "AI · CLAUDE" : "LOCALE"}
+            text={s.generated_by === "ai" ? "AI GRATIS" : "LOCALE"}
             bg={s.generated_by === "ai" ? colors.blue : colors.muted}
           />
           {s.score ? <Badge text={`SCORE ${s.score}/100`} bg={colors.green} /> : null}
