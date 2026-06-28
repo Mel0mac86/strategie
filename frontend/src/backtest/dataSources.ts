@@ -98,6 +98,28 @@ async function fetchTwelveData(symbol: string, tf: string, apiKey: string, count
     }));
 }
 
+export type MultiDownload = { inst: Instrument; bars: Bar[]; error?: string };
+
+/** Scarica i dati di più strumenti (per il test multi-asset). Errori isolati per strumento. */
+export async function downloadMany(
+  asset: string,
+  tf: string,
+  apiKey: string,
+  count = 1000
+): Promise<MultiDownload[]> {
+  const list = instrumentsFor(asset);
+  const results: MultiDownload[] = [];
+  for (const inst of list) {
+    try {
+      const bars = await downloadBars(inst, tf, apiKey, count);
+      results.push({ inst, bars });
+    } catch (e: any) {
+      results.push({ inst, bars: [], error: e?.message || "errore" });
+    }
+  }
+  return results;
+}
+
 export async function downloadBars(inst: Instrument, tf: string, apiKey: string, count = 1000): Promise<Bar[]> {
   const bars =
     inst.provider === "binance"

@@ -16,6 +16,7 @@ import type { Strategy, Trade } from "@/api";
 const K_STRAT = "store:strategies";
 const K_TRADES = "store:trades";
 const K_CHALLENGE = "store:challenge";
+const K_CHALLENGES = "store:challenges";
 
 export const localStore = {
   // -------- Strategie --------
@@ -134,5 +135,54 @@ export const localStore = {
         doc.daily_start_balance
       ),
     };
+  },
+
+  // -------- Conti multipli (challenge) --------
+  async listChallenges() {
+    let list = (await storage.get<any[]>(K_CHALLENGES)) || [];
+    // migrazione dal vecchio singolo conto
+    if (!list.length) {
+      const old = await storage.get<any>(K_CHALLENGE);
+      if (old) {
+        list = [old];
+        await storage.set(K_CHALLENGES, list);
+      }
+    }
+    return list.map((c) => ({
+      ...c,
+      active: true,
+      progress: challengeProgress(c.account_size, c.current_balance, c.phase, c.daily_start_balance),
+    }));
+  },
+  async addChallenge(b: Record<string, any>) {
+    const list = (await storage.get<any[]>(K_CHALLENGES)) || [];
+    const current = Number(b.current_balance ?? b.account_size ?? 50000);
+    const doc = {
+      id: uid(),
+      account_size: Number(b.account_size || 50000),
+      phase: b.phase || "phase1",
+      current_balance: current,
+      daily_start_balance: b.daily_start_balance != null ? Number(b.daily_start_balance) : current,
+      label: b.label || "Conto",
+      broker: b.broker || "",
+    };
+    list.unshift(doc);
+    await storage.set(K_CHALLENGES, list);
+    return doc;
+  },
+  async updateChallengeBalance(id: string, balance: number, dailyStart?: number) {
+    const list = (await storage.get<any[]>(K_CHALLENGES)) || [];
+    const next = list.map((c) =>
+      c.id === id
+        ? { ...c, current_balance: Number(balance), daily_start_balance: dailyStart != null ? Number(dailyStart) : c.daily_start_balance }
+        : c
+    );
+    await storage.set(K_CHALLENGES, next);
+    return { ok: true };
+  },
+  async deleteChallenge(id: string) {
+    const list = (await storage.get<any[]>(K_CHALLENGES)) || [];
+    await storage.set(K_CHALLENGES, list.filter((c) => c.id !== id));
+    return { deleted: true };
   },
 };

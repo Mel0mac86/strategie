@@ -228,4 +228,11 @@ export const api = {
       () => request<Challenge>("/api/challenge", { method: "POST", body: JSON.stringify(body) }),
       () => localStore.upsertChallenge(body)
     ),
+
+  // Conti multipli (gestiti localmente sul dispositivo)
+  listChallenges: () => localStore.listChallenges() as Promise<Challenge[]>,
+  addChallenge: (body: Record<string, any>) => localStore.addChallenge(body),
+  updateChallengeBalance: (id: string, balance: number, dailyStart?: number) =>
+    localStore.updateChallengeBalance(id, balance, dailyStart),
+  deleteChallengeById: (id: string) => localStore.deleteChallenge(id),
 };
