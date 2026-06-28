@@ -37,22 +37,44 @@ function prompt(req: Record<string, any>): string {
   // Schema "piatto" (solo array di stringhe): i modelli gratuiti sbagliano spesso
   // gli oggetti annidati. La routine è "HH:MM | attività" e la riconvertiamo noi.
   return (
-    `Sei un trading coach esperto di challenge FTMO. Genera una strategia in ITALIANO ` +
-    `e rispondi SOLO con un oggetto JSON valido, senza testo prima o dopo, con SOLO array di stringhe:\n` +
+    `Sei un trading coach professionista specializzato in challenge FTMO/prop firm. ` +
+    `Genera una strategia CONCRETA e OPERATIVA in ITALIANO e rispondi SOLO con un oggetto ` +
+    `JSON valido (nessun testo prima o dopo), con SOLO array di stringhe:\n` +
     `{"title": "...", "summary": "...", "entry_rules": ["..."], "exit_rules": ["..."], ` +
     `"daily_routine": ["07:30 | controlla calendario economico", "08:00 | analisi multi-timeframe"], ` +
     `"do": ["..."], "dont": ["..."]}\n\n` +
     `Parametri:\n` +
     `- Capitale: $${acc.toLocaleString("it-IT")}\n` +
-    `- Fase: ${req.phase || "phase1"}\n` +
+    `- Fase: ${req.phase || "phase1"} (target +${req.phase === "phase2" ? "5" : "10"}%, max -5%/giorno, -10% totale)\n` +
     `- Asset: ${ASSET_LABELS[req.asset_class] || req.asset_class}\n` +
     `- Tolleranza rischio: ${req.risk_tolerance || "medium"}\n` +
     `- Stile: ${STYLE_LABELS[req.trading_style] || req.trading_style}\n` +
     `- Tipo strategia: ${STRAT_LABELS[req.strategy_type] || req.strategy_type}\n` +
-    `- Timeframe: ${req.timeframe || "H1"}\n` +
-    `Regole d'ingresso numerate e specifiche, 5-7 voci di routine con orari, ` +
-    `liste do/don't concrete, rispetto dei limiti FTMO (max -5% giornaliero, -10% totale). ` +
-    `Usa SOLO stringhe negli array, mai oggetti.`
+    `- Timeframe operativo: ${req.timeframe || "H1"}\n\n` +
+    `Regole d'ingresso specifiche con indicatori e valori concreti (EMA, RSI, ATR per lo stop, ` +
+    `conferma e filtro di trend), uscite con stop ATR/take profit a R multipli/break-even, ` +
+    `5-7 voci di routine con orari, do/don't concreti, coerenza coi limiti FTMO. ` +
+    `Frasi BREVI (non superare il limite di lunghezza). ` +
+    `Usa SOLO stringhe negli array, mai oggetti, e rispondi SOLO col JSON.`
+  );
+}
+
+function refinePrompt(req: Record<string, any>, exp: any): string {
+  return (
+    `Hai proposto una strategia ${STRAT_LABELS[req.strategy_type] || req.strategy_type} ` +
+    `(${STYLE_LABELS[req.trading_style] || req.trading_style}, ${req.timeframe || "H1"}) per FTMO. ` +
+    `È stata BACKTESTATA su DATI REALI (${exp.source}) con validazione out-of-sample:\n` +
+    `- Rendimento: ${exp.netPnlPct}%\n- Win rate: ${exp.winRate}%\n- Profit factor: ${exp.profitFactor}\n` +
+    `- Max drawdown: ${exp.maxDrawdownPct}%\n- Trade: ${exp.trades}\n` +
+    `- Parametri ottimali trovati: Risk:Reward 1:${exp.rr}, Stop ${exp.slAtrMult}× ATR\n` +
+    `- Robusta out-of-sample: ${exp.robust ? "sì" : "no"}\n\n` +
+    `Analizza questi risultati REALI e MIGLIORA la strategia. Rispondi SOLO con JSON, ` +
+    `array di sole stringhe BREVI:\n` +
+    `{"verdict": "max 2 frasi: valutazione + 2 consigli concreti", "summary": "1 frase", ` +
+    `"entry_rules": ["max 5 voci brevi"], "exit_rules": ["max 4 voci brevi"], ` +
+    `"do": ["max 4 voci"], "dont": ["max 4 voci"]}\n` +
+    `Sii onesto: se PF<1 o non robusta, dillo e proponi correzioni. ` +
+    `IMPORTANTE: sii CONCISO, frasi corte, per non superare il limite di lunghezza.`
   );
 }
 
@@ -60,13 +82,41 @@ function tryParse(s: string): any | null {
   try {
     return JSON.parse(s);
   } catch {
-    // riparazioni comuni: virgole finali, oggetti dentro array (->stringa)
-    let r = s.replace(/,\s*([}\]])/g, "$1");
-    try {
-      return JSON.parse(r);
-    } catch {
-      return null;
+    /* prova le riparazioni sotto */
+  }
+  // 1) virgole finali
+  let r = s.replace(/,\s*([}\]])/g, "$1");
+  try {
+    return JSON.parse(r);
+  } catch {
+    /* continua */
+  }
+  // 2) JSON troncato: taglia all'ultimo elemento completo e chiude le parentesi
+  try {
+    let t = s;
+    // se l'ultimo carattere non chiude una struttura, tronca dopo l'ultima stringa completa
+    if (!/[}\]]\s*$/.test(t)) {
+      const cut = t.lastIndexOf('",');
+      const cut2 = t.lastIndexOf('"]');
+      const at = Math.max(cut, cut2);
+      if (at > 0) t = t.slice(0, at + 1);
     }
+    // chiudi parentesi aperte (ignorando quelle dentro le stringhe in modo approssimato)
+    let depth: string[] = [];
+    let inStr = false;
+    for (let i = 0; i < t.length; i++) {
+      const ch = t[i];
+      if (ch === '"' && t[i - 1] !== "\\") inStr = !inStr;
+      if (inStr) continue;
+      if (ch === "{" || ch === "[") depth.push(ch);
+      else if (ch === "}" || ch === "]") depth.pop();
+    }
+    if (inStr) t += '"';
+    while (depth.length) t += depth.pop() === "{" ? "}" : "]";
+    t = t.replace(/,\s*([}\]])/g, "$1");
+    return JSON.parse(t);
+  } catch {
+    return null;
   }
 }
 
@@ -81,12 +131,12 @@ function extractJson(text: string): any | null {
   return tryParse(s.slice(start, end + 1));
 }
 
-async function callAi(req: Record<string, any>): Promise<any | null> {
+async function callRaw(userContent: string): Promise<any | null> {
   const body = {
     model: AI_MODEL,
     messages: [
       { role: "system", content: "Sei un assistente che risponde solo con JSON valido in italiano." },
-      { role: "user", content: prompt(req) },
+      { role: "user", content: userContent },
     ],
     temperature: 0.4,
   };
@@ -102,17 +152,54 @@ async function callAi(req: Record<string, any>): Promise<any | null> {
     clearTimeout(timer);
     if (!r.ok) return null;
     const data = await r.json().catch(() => null);
-    const content = data?.choices?.[0]?.message?.content;
-    return extractJson(typeof content === "string" ? content : "");
+    const msg = data?.choices?.[0]?.message || {};
+    // alcuni modelli "reasoning" mettono il JSON in content, altri in reasoning
+    return (
+      extractJson(typeof msg.content === "string" ? msg.content : "") ||
+      extractJson(typeof msg.reasoning === "string" ? msg.reasoning : "")
+    );
   } catch {
     return null;
   }
 }
 
+/** Ritenta la chiamata AI fino a `tries` volte (il modello gratuito a volte sbaglia il JSON). */
+async function callRawRetry(content: string, tries = 3): Promise<any | null> {
+  for (let i = 0; i < tries; i++) {
+    const r = await callRaw(content);
+    if (r) return r;
+  }
+  return null;
+}
+
+const asArr = (v: any): string[] => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : []);
+
+/**
+ * Affina la strategia in base al BACKTEST REALE: l'AI analizza le metriche reali,
+ * migliora regole/uscite e produce un verdetto con consigli concreti.
+ */
+export async function refineWithBacktest(
+  s: Strategy,
+  req: Record<string, any>,
+  exp: NonNullable<Strategy["expected"]>
+): Promise<Strategy> {
+  const ai = await callRawRetry(refinePrompt(req, exp), 2);
+  if (!ai) return s;
+  return {
+    ...s,
+    verdict: typeof ai.verdict === "string" && ai.verdict.trim() ? ai.verdict.trim() : s.verdict,
+    summary: typeof ai.summary === "string" && ai.summary.trim() ? ai.summary.trim() : s.summary,
+    entry_rules: asArr(ai.entry_rules).length ? asArr(ai.entry_rules) : s.entry_rules,
+    exit_rules: asArr(ai.exit_rules).length ? asArr(ai.exit_rules) : s.exit_rules,
+    do: asArr(ai.do).length ? asArr(ai.do) : s.do,
+    dont: asArr(ai.dont).length ? asArr(ai.dont) : s.dont,
+  };
+}
+
 /** Genera una strategia con AI gratuita; in caso di errore usa il template locale. */
 export async function generateAiStrategy(req: Record<string, any>): Promise<Strategy> {
   const base = buildLocalStrategy(req); // ftmo, risk_management, expected calcolati in locale
-  const ai = await callAi(req);
+  const ai = await callRawRetry(prompt(req), 3);
   if (!ai) return { ...base, generated_by: "local" };
 
   const arr = (v: any): string[] => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : []);

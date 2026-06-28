@@ -165,6 +165,16 @@ export default function StrategyDetail() {
         );
       })() : null}
 
+      {s.verdict ? (
+        <Card style={{ backgroundColor: colors.black }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: space.sm }}>
+            <Text style={[styles.expParams, { color: colors.white, marginBottom: 0 }]}>🤖 VERDETTO AI</Text>
+            <Badge text="DAL BACKTEST" bg={colors.blue} />
+          </View>
+          <Text style={styles.verdictTxt}>{s.verdict}</Text>
+        </Card>
+      ) : null}
+
       {/* Regole di ingresso numerate */}
       <Card>
         <SectionLabel>Regole di Ingresso</SectionLabel>
@@ -429,6 +439,7 @@ const styles = StyleSheet.create({
   bold: { fontWeight: "900" },
   expParams: { ...t.body, color: colors.blue, fontWeight: "800", marginBottom: space.md },
   expNote: { ...t.small, color: colors.muted, marginTop: space.sm, lineHeight: 18 },
+  verdictTxt: { ...t.body, color: "#E5E7EB", lineHeight: 22 },
 
   numRow: { flexDirection: "row", alignItems: "flex-start", marginBottom: space.md },
   numBadge: {

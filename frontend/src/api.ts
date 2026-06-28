@@ -60,6 +60,7 @@ export type Strategy = {
   generated_by: "ai" | "local";
   score?: number | null;
   created_at: string;
+  verdict?: string | null; // analisi/consiglio dell'AI basato sul backtest reale
   expected?: {
     source: string; // es. "simulato"
     rr: number;
