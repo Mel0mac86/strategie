@@ -9,6 +9,7 @@ import { EquityChart } from "@/components/EquityChart";
 import { colors, fonts, hardBorder, space, type as t } from "@/theme";
 import { TIMEFRAMES, generateBars, parseCsv, Bar } from "@/backtest/data";
 import { runBacktest, BacktestResult } from "@/backtest/engine";
+import { optimize, OptOutcome, OptItem } from "@/backtest/optimizer";
 import { storage } from "@/utils/storage";
 
 const SAVED_KEY = "store:backtests";
@@ -68,6 +69,7 @@ export default function BacktestScreen() {
   const [phase, setPhase] = useState("phase1");
   const [riskPct, setRiskPct] = useState(params.risk_pct || "1");
   const [rr, setRr] = useState("2");
+  const [slMult, setSlMult] = useState("1.5");
   const [cost, setCost] = useState("5");
   const [source, setSource] = useState<"sim" | "csv">("sim");
   const [bars, setBars] = useState("1500");
@@ -75,6 +77,8 @@ export default function BacktestScreen() {
   const [fileName, setFileName] = useState("");
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [running, setRunning] = useState(false);
+  const [optResult, setOptResult] = useState<OptOutcome | null>(null);
+  const [optimizing, setOptimizing] = useState(false);
   const [saved, setSaved] = useState<SavedBacktest[]>([]);
 
   const loadSaved = useCallback(async () => {
@@ -146,42 +150,96 @@ export default function BacktestScreen() {
     }
   }
 
+  // Carica i dati (CSV o simulati); ritorna null se insufficienti.
+  function loadData(): Bar[] | null {
+    if (source === "csv") {
+      const data = parseCsv(csv);
+      if (data.length < 60) {
+        Alert.alert(
+          "Dati insufficienti",
+          "Carica/incolla almeno ~250 barre OHLC (CSV da MT4/TradingView) per un backtest affidabile."
+        );
+        return null;
+      }
+      return data;
+    }
+    const count = Math.max(300, Math.min(20000, Number(bars) || 1500));
+    return generateBars(asset, timeframe, count);
+  }
+
+  function baseParams() {
+    return {
+      accountSize: Number(accountSize),
+      phase,
+      riskPct: Number(riskPct) || 1,
+      maxDailyTrades: 5,
+      costPctOfRisk: Number(cost) || 0,
+    };
+  }
+
   function run() {
     setRunning(true);
     setResult(null);
-    // setTimeout per dare modo alla UI di mostrare lo stato "in corso"
+    setOptResult(null);
     setTimeout(() => {
       try {
-        let data: Bar[];
-        if (source === "csv") {
-          data = parseCsv(csv);
-          if (data.length < 60) {
-            Alert.alert(
-              "Dati insufficienti",
-              "Incolla almeno ~250 barre OHLC (CSV da MT4/TradingView) per un backtest affidabile."
-            );
-            setRunning(false);
-            return;
-          }
-        } else {
-          const count = Math.max(300, Math.min(20000, Number(bars) || 1500));
-          data = generateBars(asset, timeframe, count);
-        }
+        const data = loadData();
+        if (!data) return;
         const res = runBacktest(data, {
+          ...baseParams(),
           strategyType,
-          accountSize: Number(accountSize),
-          phase,
-          riskPct: Number(riskPct) || 1,
           rr: Number(rr) || 2,
-          slAtrMult: 1.5,
-          maxDailyTrades: 5,
-          costPctOfRisk: Number(cost) || 0,
+          slAtrMult: Number(slMult) || 1.5,
         });
         setResult(res);
       } catch (e: any) {
         Alert.alert("Errore", e?.message || "Backtest fallito");
       } finally {
         setRunning(false);
+      }
+    }, 30);
+  }
+
+  function runOptimize() {
+    setOptimizing(true);
+    setOptResult(null);
+    setResult(null);
+    setTimeout(() => {
+      try {
+        const data = loadData();
+        if (!data) return;
+        const out = optimize(data, baseParams(), {
+          strategies: ["trend_pullback", "session_breakout", "xau_scalper", "mean_reversion"],
+        });
+        setOptResult(out);
+      } catch (e: any) {
+        Alert.alert("Errore", e?.message || "Ottimizzazione fallita");
+      } finally {
+        setOptimizing(false);
+      }
+    }, 30);
+  }
+
+  // Applica una configurazione ottimizzata al form ed esegue il backtest completo.
+  function applyConfig(item: OptItem) {
+    setStrategyType(item.config.strategyType);
+    setRr(String(item.config.rr));
+    setSlMult(String(item.config.slAtrMult));
+    setOptResult(null);
+    setTimeout(() => {
+      try {
+        const data = loadData();
+        if (!data) return;
+        setResult(
+          runBacktest(data, {
+            ...baseParams(),
+            strategyType: item.config.strategyType,
+            rr: item.config.rr,
+            slAtrMult: item.config.slAtrMult,
+          })
+        );
+      } catch {
+        /* ignore */
       }
     }, 30);
   }
@@ -217,6 +275,10 @@ export default function BacktestScreen() {
           <View style={{ flex: 1 }}>
             <SectionLabel>Risk:Reward</SectionLabel>
             <TextInput style={styles.input} value={rr} onChangeText={setRr} keyboardType="numeric" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <SectionLabel>SL × ATR</SectionLabel>
+            <TextInput style={styles.input} value={slMult} onChangeText={setSlMult} keyboardType="numeric" />
           </View>
         </View>
 
@@ -280,6 +342,19 @@ export default function BacktestScreen() {
         onPress={run}
         loading={running}
       />
+      <Button
+        title={optimizing ? "Ottimizzazione..." : "🎯 Ottimizza (trova la migliore)"}
+        variant="success"
+        onPress={runOptimize}
+        loading={optimizing}
+        style={{ marginTop: space.sm }}
+      />
+      <Text style={styles.optHint}>
+        Cerca la combinazione migliore di strategia + RR + stop su una parte dei dati e la valida
+        sui dati NON visti (out-of-sample): i numeri mostrati sono quelli realistici.
+      </Text>
+
+      {optResult && <OptResults out={optResult} onApply={applyConfig} />}
 
       {result && <Results res={result} accountSize={Number(accountSize)} />}
       {result && (
@@ -381,6 +456,94 @@ function Mini({ label, value, accent }: { label: string; value: string; accent?:
   );
 }
 
+function stratLabel(v: string) {
+  return STRATEGIES.find((x) => x.value === v)?.label || v;
+}
+
+function OptResults({ out, onApply }: { out: OptOutcome; onApply: (i: OptItem) => void }) {
+  const best = out.best;
+  return (
+    <View style={{ marginTop: space.lg }}>
+      <View style={[styles.verdict, { backgroundColor: colors.black }]}>
+        <Text style={styles.verdictTxt}>🎯 MIGLIORE CONFIGURAZIONE</Text>
+        <Text style={styles.verdictSub}>
+          {out.splitOk
+            ? "Validata su dati non visti (out-of-sample)"
+            : "Ottimizzazione sull'intero storico"}
+        </Text>
+      </View>
+
+      {!best ? (
+        <Card>
+          <Text style={styles.optNote}>
+            Nessuna configurazione valida trovata su questi dati. Prova un altro asset/timeframe o
+            un CSV reale più lungo.
+          </Text>
+        </Card>
+      ) : (
+        <>
+          <Card>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: space.sm }}>
+              <Text style={styles.optBestTitle}>
+                {stratLabel(best.config.strategyType)}
+              </Text>
+              <Badge
+                text={best.robust ? "SOLIDA" : "DEBOLE"}
+                bg={best.robust ? colors.green : colors.yellow}
+              />
+            </View>
+            <Text style={styles.optParams}>
+              RR 1:{best.config.rr} · Stop {best.config.slAtrMult}× ATR
+            </Text>
+            <Text style={styles.optSectionTitle}>Risultati attesi (out-of-sample)</Text>
+            <View style={styles.bento}>
+              <Mini label="Rendimento" value={`${best.test.netPnlPct}%`} accent={best.test.netPnlPct >= 0 ? colors.green : colors.red} />
+              <Mini label="Win rate" value={`${best.test.winRate}%`} accent={colors.blue} />
+            </View>
+            <View style={styles.bento}>
+              <Mini label="Profit factor" value={String(best.test.profitFactor)} accent={best.test.profitFactor >= 1 ? colors.green : colors.red} />
+              <Mini label="Avg R" value={String(best.test.avgR)} accent={best.test.avgR >= 0 ? colors.green : colors.red} />
+            </View>
+            <View style={styles.bento}>
+              <Mini label="Max drawdown" value={`${best.test.maxDrawdownPct}%`} accent={best.test.maxDrawdownPct > 10 ? colors.red : colors.yellow} />
+              <Mini label="Trade" value={String(best.test.trades)} />
+            </View>
+            <Text style={styles.optInSample}>
+              In-sample (training): WR {best.train.winRate}% · PF {best.train.profitFactor} · avgR {best.train.avgR}
+            </Text>
+            <Button title="Applica e testa questa configurazione" onPress={() => onApply(best)} style={{ marginTop: space.md }} />
+          </Card>
+
+          {out.ranked.length > 1 && (
+            <Card>
+              <SectionLabel>Classifica (out-of-sample)</SectionLabel>
+              {out.ranked.slice(0, 6).map((it, i) => (
+                <Pressable key={i} style={styles.rankRow} onPress={() => onApply(it)}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.rankTitle}>
+                      {i + 1}. {stratLabel(it.config.strategyType)} · RR {it.config.rr} · SL {it.config.slAtrMult}×
+                    </Text>
+                    <Text style={styles.rankMetrics}>
+                      <Text style={{ color: it.test.netPnlPct >= 0 ? colors.green : colors.red, fontWeight: "900" }}>
+                        {it.test.netPnlPct >= 0 ? "+" : ""}{it.test.netPnlPct}%
+                      </Text>{" "}
+                      · WR {it.test.winRate}% · PF {it.test.profitFactor} · {it.test.trades} trade
+                      {it.robust ? " · ✓" : ""}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+                </Pressable>
+              ))}
+            </Card>
+          )}
+        </>
+      )}
+
+      {out.note ? <Text style={styles.optNote}>{out.note}</Text> : null}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.paper },
   content: { padding: space.lg, paddingBottom: 48 },
@@ -398,6 +561,15 @@ const styles = StyleSheet.create({
   savedTitle: { ...t.h3, color: colors.black },
   savedMeta: { ...t.label, color: colors.muted, marginTop: 2 },
   savedMetrics: { ...t.small, color: colors.ink, marginTop: 4 },
+  optHint: { ...t.small, color: colors.muted, marginTop: space.sm, lineHeight: 17 },
+  optBestTitle: { ...t.h2, color: colors.black, flex: 1 },
+  optParams: { ...t.body, color: colors.blue, fontWeight: "800", marginBottom: space.md },
+  optSectionTitle: { ...t.label, color: colors.muted, textTransform: "uppercase", marginBottom: space.sm },
+  optInSample: { ...t.small, color: colors.muted, marginTop: space.sm },
+  optNote: { ...t.small, color: colors.yellow, marginTop: space.md, lineHeight: 18 },
+  rankRow: { flexDirection: "row", alignItems: "center", borderTopWidth: 1, borderTopColor: colors.line, paddingVertical: space.sm },
+  rankTitle: { ...t.small, color: colors.black, fontWeight: "700" },
+  rankMetrics: { ...t.small, color: colors.ink, marginTop: 2 },
   verdict: { ...hardBorder, padding: space.lg, marginBottom: space.lg },
   verdictTxt: { ...t.h2, color: colors.white },
   verdictSub: { ...t.small, color: colors.white, marginTop: 4, opacity: 0.9 },
