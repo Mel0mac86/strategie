@@ -97,7 +97,9 @@ function computeAlerts(p: ChallengeProgress): FtmoAlert[] {
 }
 
 export default function DashboardScreen() {
-  const [challenge, setChallenge] = useState<Challenge | null>(null);
+  const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [showSetup, setShowSetup] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -117,20 +119,15 @@ export default function DashboardScreen() {
   const load = useCallback(async (showSpinner = true) => {
     if (showSpinner) setLoading(true);
     try {
-      const data = await api.getChallenge();
-      setChallenge(data);
-      if (data?.active && data.account_size) {
-        setAccountSize(String(data.account_size));
-        if (data.phase) setPhase(data.phase);
-        setBalance(String(data.current_balance ?? data.account_size));
-        setLabel(data.label ?? "");
-        setBroker(data.broker ?? "");
-      }
+      const data = await api.listChallenges();
+      setChallenges(data);
+      setSelectedId((prev) => {
+        if (prev && data.some((c) => c.id === prev)) return prev;
+        return data[0]?.id ?? null;
+      });
     } catch (e: any) {
-      Alert.alert(
-        "Errore di connessione",
-        "Impossibile caricare la challenge. Verifica la connessione al server."
-      );
+      // store locale: in caso di errore mostra lista vuota
+      setChallenges([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -158,7 +155,7 @@ export default function DashboardScreen() {
     setBalance((prev) => (prev === accountSize || prev === "" ? v : prev));
   };
 
-  const startTracking = async () => {
+  const addAccount = async () => {
     const size = parseNum(accountSize);
     if (size <= 0) {
       Alert.alert("Dato mancante", "Seleziona una dimensione conto valida.");
@@ -166,7 +163,7 @@ export default function DashboardScreen() {
     }
     setSubmitting(true);
     try {
-      await api.upsertChallenge({
+      const created: any = await api.addChallenge({
         account_size: size,
         phase,
         current_balance: parseNum(balance) || size,
@@ -174,16 +171,20 @@ export default function DashboardScreen() {
         label: label.trim() || undefined,
         broker: broker.trim() || undefined,
       });
+      setShowSetup(false);
+      setLabel("");
+      setBroker("");
+      if (created?.id) setSelectedId(created.id);
       await load(true);
     } catch (e: any) {
-      Alert.alert("Errore", "Impossibile avviare il tracking. Riprova.");
+      Alert.alert("Errore", "Impossibile aggiungere il conto. Riprova.");
     } finally {
       setSubmitting(false);
     }
   };
 
   const submitUpdateBalance = async () => {
-    if (!challenge?.account_size) return;
+    if (!selectedId) return;
     const bal = parseNum(newBalance);
     if (bal <= 0) {
       Alert.alert("Dato non valido", "Inserisci un saldo maggiore di zero.");
@@ -191,13 +192,7 @@ export default function DashboardScreen() {
     }
     setUpdating(true);
     try {
-      await api.upsertChallenge({
-        account_size: challenge.account_size,
-        phase: challenge.phase,
-        current_balance: bal,
-        label: challenge.label,
-        broker: challenge.broker,
-      });
+      await api.updateChallengeBalance(selectedId, bal);
       setUpdateOpen(false);
       setNewBalance("");
       await load(false);
@@ -208,34 +203,42 @@ export default function DashboardScreen() {
     }
   };
 
-  const resetChallenge = () => {
-    if (!challenge?.account_size) return;
-    Alert.alert(
-      "Reset challenge",
-      "Vuoi azzerare i progressi riportando il saldo alla dimensione conto?",
-      [
-        { text: "Annulla", style: "cancel" },
-        {
-          text: "Reset",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await api.upsertChallenge({
-                account_size: challenge.account_size,
-                phase: challenge.phase,
-                current_balance: challenge.account_size,
-                daily_start_balance: challenge.account_size,
-                label: challenge.label,
-                broker: challenge.broker,
-              });
-              await load(true);
-            } catch (e: any) {
-              Alert.alert("Errore", "Reset non riuscito. Riprova.");
-            }
-          },
+  const resetSelected = () => {
+    const sel = challenges.find((c) => c.id === selectedId);
+    if (!sel?.id || !sel.account_size) return;
+    Alert.alert("Reset conto", "Riportare il saldo alla dimensione conto?", [
+      { text: "Annulla", style: "cancel" },
+      {
+        text: "Reset",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await api.updateChallengeBalance(sel.id!, sel.account_size!, sel.account_size!);
+            await load(true);
+          } catch {
+            Alert.alert("Errore", "Reset non riuscito. Riprova.");
+          }
         },
-      ]
-    );
+      },
+    ]);
+  };
+
+  const deleteAccount = (id: string, name: string) => {
+    Alert.alert("Elimina conto", `Eliminare "${name}"?`, [
+      { text: "Annulla", style: "cancel" },
+      {
+        text: "Elimina",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await api.deleteChallengeById(id);
+            await load(true);
+          } catch {
+            Alert.alert("Errore", "Eliminazione non riuscita.");
+          }
+        },
+      },
+    ]);
   };
 
   if (loading) {
@@ -247,8 +250,8 @@ export default function DashboardScreen() {
     );
   }
 
-  const isActive = !!challenge?.active;
-  const progress = challenge?.progress;
+  const selected = challenges.find((c) => c.id === selectedId) || challenges[0] || null;
+  const hasAccounts = challenges.length > 0;
 
   return (
     <ScrollView
@@ -265,12 +268,32 @@ export default function DashboardScreen() {
     >
       <Text style={styles.title}>PROGRESSI CHALLENGE</Text>
       <Text style={styles.subtitle}>
-        {isActive
-          ? "Monitora drawdown, limiti FTMO e target in tempo reale."
+        {hasAccounts
+          ? `${challenges.length} cont${challenges.length === 1 ? "o" : "i"} · tocca un conto per i dettagli.`
           : "Configura la tua challenge per avviare il tracking."}
       </Text>
 
-      {!isActive || !progress ? (
+      {hasAccounts && (
+        <>
+          {challenges.map((c) => (
+            <AccountCard
+              key={c.id}
+              ch={c}
+              selected={c.id === selected?.id}
+              onPress={() => setSelectedId(c.id!)}
+              onDelete={() => deleteAccount(c.id!, c.label || "Conto")}
+            />
+          ))}
+          <Button
+            title={showSetup ? "Chiudi" : "+ Aggiungi conto"}
+            variant="secondary"
+            onPress={() => setShowSetup((s) => !s)}
+            style={{ marginBottom: space.lg }}
+          />
+        </>
+      )}
+
+      {(showSetup || !hasAccounts) && (
         <SetupForm
           accountSize={accountSize}
           onAccountSize={handleAccountSize}
@@ -283,17 +306,19 @@ export default function DashboardScreen() {
           broker={broker}
           onBroker={setBroker}
           submitting={submitting}
-          onSubmit={startTracking}
+          onSubmit={addAccount}
         />
-      ) : (
+      )}
+
+      {hasAccounts && selected?.progress && (
         <LiveTracking
-          challenge={challenge!}
-          progress={progress}
+          challenge={selected}
+          progress={selected.progress}
           onOpenUpdate={() => {
-            setNewBalance(String(progress.current_balance));
+            setNewBalance(String(selected.progress!.current_balance));
             setUpdateOpen(true);
           }}
-          onReset={resetChallenge}
+          onReset={resetSelected}
         />
       )}
 
@@ -409,13 +434,62 @@ function SetupForm(props: {
 
       <View style={styles.block}>
         <Button
-          title="Avvia Tracking"
+          title="Aggiungi conto"
           variant="primary"
           loading={props.submitting}
           onPress={props.onSubmit}
         />
       </View>
     </Card>
+  );
+}
+
+function AccountCard(props: {
+  ch: Challenge;
+  selected: boolean;
+  onPress: () => void;
+  onDelete: () => void;
+}) {
+  const { ch, selected, onPress, onDelete } = props;
+  const p = ch.progress;
+  if (!p) return null;
+  const risk = riskMeta(p.risk_color);
+  const alerts = computeAlerts(p);
+  const critical = alerts.some((a) => a.level === "critical");
+  const warning = alerts.some((a) => a.level === "warning");
+  const targetPct = Math.max(0, Math.min(100, p.progress_to_target_pct));
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[styles.acctCard, selected && { borderColor: colors.blue, borderWidth: 3 }]}
+    >
+      <View style={styles.acctTop}>
+        <View style={[styles.riskDot, { backgroundColor: risk.color }]} />
+        <Text style={styles.acctLabel} numberOfLines={1}>
+          {ch.label || "Conto"}{ch.broker ? ` · ${ch.broker}` : ""}
+        </Text>
+        {(critical || warning) && (
+          <View style={[styles.acctAlert, { backgroundColor: critical ? colors.red : colors.yellow }]}>
+            <Text style={styles.acctAlertTxt}>!</Text>
+          </View>
+        )}
+        <Pressable hitSlop={8} onPress={onDelete} style={{ paddingHorizontal: 6 }}>
+          <Text style={{ color: colors.red, fontWeight: "900" }}>✕</Text>
+        </Pressable>
+      </View>
+      <View style={styles.acctRow}>
+        <Text style={styles.acctBalance}>{money(p.current_balance)}</Text>
+        <Text style={[styles.acctPnl, { color: p.pnl >= 0 ? colors.green : colors.red }]}>
+          {p.pnl >= 0 ? "+" : ""}{pct(p.pnl_pct)}
+        </Text>
+      </View>
+      <View style={styles.acctBarTrack}>
+        <View style={[styles.acctBarFill, { width: `${targetPct}%` }]} />
+      </View>
+      <Text style={styles.acctMeta}>
+        Target {pct(p.progress_to_target_pct)} · DD {pct(p.overall_drawdown_pct)} · {String(ch.phase).replace("phase", "Fase ")}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -764,6 +838,18 @@ const styles = StyleSheet.create({
     marginBottom: space.lg,
   },
   notifTxt: { ...t.h3, color: colors.black },
+  acctCard: { ...hardBorder, backgroundColor: colors.white, padding: space.md, marginBottom: space.md },
+  acctTop: { flexDirection: "row", alignItems: "center", marginBottom: space.sm },
+  riskDot: { width: 12, height: 12, borderRadius: 6, marginRight: space.sm },
+  acctLabel: { flex: 1, ...t.h3, color: colors.black },
+  acctAlert: { width: 20, height: 20, borderRadius: 10, alignItems: "center", justifyContent: "center", marginRight: space.sm },
+  acctAlertTxt: { color: colors.white, fontWeight: "900", fontSize: 13 },
+  acctRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" },
+  acctBalance: { fontSize: 22, fontWeight: "900", color: colors.black, fontFamily: fonts.mono },
+  acctPnl: { fontSize: 16, fontWeight: "900" },
+  acctBarTrack: { height: 8, ...hardBorder, backgroundColor: colors.paper, marginTop: space.sm },
+  acctBarFill: { height: "100%", backgroundColor: colors.green },
+  acctMeta: { ...t.label, color: colors.muted, marginTop: 6 },
 
   // Azioni
   actions: { marginTop: space.sm, marginBottom: space.xl },

@@ -10,7 +10,8 @@ import { colors, fonts, hardBorder, space, type as t } from "@/theme";
 import { TIMEFRAMES, generateBars, parseCsv, Bar } from "@/backtest/data";
 import { runBacktest, BacktestResult } from "@/backtest/engine";
 import { optimize, walkForward, OptOutcome, OptItem, WFOutcome } from "@/backtest/optimizer";
-import { instrumentsFor, downloadBars } from "@/backtest/dataSources";
+import { instrumentsFor, downloadBars, downloadMany } from "@/backtest/dataSources";
+import { exportBacktestPdf, BacktestMeta } from "@/utils/exporters";
 import { storage } from "@/utils/storage";
 
 const API_KEY_STORE = "store:twelvedata_key";
@@ -29,6 +30,17 @@ type SavedBacktest = {
   maxDrawdownPct: number;
   trades: number;
   ftmoPassed: boolean;
+};
+
+type MultiAssetRow = {
+  label: string;
+  netPnlPct: number;
+  winRate: number;
+  profitFactor: number;
+  maxDrawdownPct: number;
+  trades: number;
+  ftmoPassed: boolean;
+  error?: string;
 };
 
 const STRATEGIES = [
@@ -88,6 +100,8 @@ export default function BacktestScreen() {
   const downloadedRef = useRef<Bar[] | null>(null);
   const [wfResult, setWfResult] = useState<WFOutcome | null>(null);
   const [wfRunning, setWfRunning] = useState(false);
+  const [maResult, setMaResult] = useState<MultiAssetRow[] | null>(null);
+  const [maRunning, setMaRunning] = useState(false);
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [running, setRunning] = useState(false);
   const [optResult, setOptResult] = useState<OptOutcome | null>(null);
@@ -233,11 +247,52 @@ export default function BacktestScreen() {
     }
   }
 
+  async function runMultiAsset() {
+    const list = instrumentsFor(asset);
+    if (list.some((x) => x.provider === "twelvedata") && !apiKey.trim()) {
+      Alert.alert(
+        "Chiave richiesta",
+        "Il test multi-asset su Forex/Metalli/Indici richiede la chiave Twelve Data. Per le crypto (Binance) funziona senza chiave."
+      );
+      return;
+    }
+    setMaRunning(true);
+    setMaResult(null);
+    setResult(null);
+    setOptResult(null);
+    setWfResult(null);
+    try {
+      const downloads = await downloadMany(asset, timeframe, apiKey.trim(), Number(onlineBars) || 1000);
+      const rows: MultiAssetRow[] = downloads.map((d) => {
+        if (d.error || d.bars.length < 250) {
+          return { label: d.inst.label, netPnlPct: 0, winRate: 0, profitFactor: 0, maxDrawdownPct: 0, trades: 0, ftmoPassed: false, error: d.error || "pochi dati" };
+        }
+        const r = runBacktest(d.bars, {
+          ...baseParams(),
+          strategyType,
+          rr: Number(rr) || 2,
+          slAtrMult: Number(slMult) || 1.5,
+        });
+        return {
+          label: d.inst.label,
+          netPnlPct: r.netPnlPct, winRate: r.winRate, profitFactor: r.profitFactor,
+          maxDrawdownPct: r.maxDrawdownPct, trades: r.trades, ftmoPassed: r.ftmoPassed,
+        };
+      });
+      setMaResult(rows);
+    } catch (e: any) {
+      Alert.alert("Errore", e?.message || "Multi-asset fallito");
+    } finally {
+      setMaRunning(false);
+    }
+  }
+
   function runWalkForward() {
     setWfRunning(true);
     setWfResult(null);
     setResult(null);
     setOptResult(null);
+    setMaResult(null);
     setTimeout(() => {
       try {
         const data = loadData();
@@ -525,15 +580,41 @@ export default function BacktestScreen() {
         loading={wfRunning}
         style={{ marginTop: space.sm }}
       />
+      <Button
+        title={maRunning ? "Scaricamento + test..." : "🌐 Multi-asset (stessa strategia, più strumenti)"}
+        variant="secondary"
+        onPress={runMultiAsset}
+        loading={maRunning}
+        style={{ marginTop: space.sm }}
+      />
       <Text style={styles.optHint}>
-        Ottimizza: trova la config migliore validata out-of-sample. Walk-forward: la testa su più
-        finestre temporali consecutive, per vedere se regge nel tempo (anti-overfitting).
+        Ottimizza: config migliore validata out-of-sample. Walk-forward: test su più finestre
+        temporali (anti-overfitting). Multi-asset: scarica più strumenti ({asset}) e prova la stessa
+        strategia su ognuno — se funziona ovunque è più robusta.
       </Text>
 
       {optResult && <OptResults out={optResult} onApply={applyConfig} />}
       {wfResult && <WFResults wf={wfResult} />}
+      {maResult && <MultiAssetResults rows={maResult} />}
 
-      {result && <Results res={result} accountSize={Number(accountSize)} />}
+      {result && (
+        <Results
+          res={result}
+          accountSize={Number(accountSize)}
+          meta={{
+            strategyLabel: STRATEGIES.find((x) => x.value === strategyType)?.label || strategyType,
+            timeframe,
+            asset,
+            rr: Number(rr) || 2,
+            slAtrMult: Number(slMult) || 1.5,
+            costPct: Number(cost) || 0,
+            sizing,
+            source: source === "csv" ? "CSV" : source === "online" ? "Online" : "Simulato",
+            accountSize: Number(accountSize),
+            phase,
+          }}
+        />
+      )}
       {result && (
         <Button
           title="💾 Salva risultato nello storico"
@@ -591,15 +672,20 @@ export default function BacktestScreen() {
   );
 }
 
-function Results({ res, accountSize }: { res: BacktestResult; accountSize: number }) {
+function Results({ res, accountSize, meta }: { res: BacktestResult; accountSize: number; meta: BacktestMeta }) {
   const pnlColor = res.netPnl >= 0 ? colors.green : colors.red;
   return (
     <View style={{ marginTop: space.lg }}>
       {/* Esito FTMO */}
       <View style={[styles.verdict, { backgroundColor: res.ftmoPassed ? colors.green : colors.red }]}>
-        <Text style={styles.verdictTxt}>
-          {res.ftmoPassed ? "✓ CHALLENGE SUPERATA" : "✕ CHALLENGE NON SUPERATA"}
-        </Text>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+          <Text style={styles.verdictTxt}>
+            {res.ftmoPassed ? "✓ CHALLENGE SUPERATA" : "✕ CHALLENGE NON SUPERATA"}
+          </Text>
+          <Pressable onPress={() => exportBacktestPdf(res, meta)} style={styles.pdfBtn}>
+            <Text style={styles.pdfTxt}>📄 PDF</Text>
+          </Pressable>
+        </View>
         <Text style={styles.verdictSub}>
           {res.targetReached ? "Target raggiunto · " : ""}
           {res.overallBreached ? "Limite totale violato · " : ""}
@@ -803,6 +889,49 @@ function OptResults({ out, onApply }: { out: OptOutcome; onApply: (i: OptItem) =
   );
 }
 
+function MultiAssetResults({ rows }: { rows: MultiAssetRow[] }) {
+  const valid = rows.filter((r) => !r.error);
+  const profitable = valid.filter((r) => r.netPnlPct > 0).length;
+  const avgPnl = valid.length ? Math.round((valid.reduce((s, r) => s + r.netPnlPct, 0) / valid.length) * 100) / 100 : 0;
+  const passed = valid.filter((r) => r.ftmoPassed).length;
+  const consistent = valid.length > 0 && profitable === valid.length;
+  return (
+    <View style={{ marginTop: space.lg }}>
+      <View style={[styles.verdict, { backgroundColor: consistent ? colors.green : profitable > 0 ? colors.yellow : colors.red }]}>
+        <Text style={styles.verdictTxt}>🌐 MULTI-ASSET</Text>
+        <Text style={styles.verdictSub}>
+          {profitable}/{valid.length} strumenti profittevoli · P&L medio {avgPnl}% · FTMO {passed}/{valid.length}
+        </Text>
+      </View>
+      <Card>
+        {rows.map((r, i) => (
+          <View key={i} style={styles.rankRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rankTitle}>{r.label}</Text>
+              {r.error ? (
+                <Text style={[styles.rankMetrics, { color: colors.muted }]}>— {r.error}</Text>
+              ) : (
+                <Text style={styles.rankMetrics}>
+                  <Text style={{ color: r.netPnlPct >= 0 ? colors.green : colors.red, fontWeight: "900" }}>
+                    {r.netPnlPct >= 0 ? "+" : ""}{r.netPnlPct}%
+                  </Text>{" "}
+                  · WR {r.winRate}% · PF {r.profitFactor} · DD {r.maxDrawdownPct}% · {r.trades} trade{" "}
+                  · {r.ftmoPassed ? "✓ FTMO" : "✕"}
+                </Text>
+              )}
+            </View>
+          </View>
+        ))}
+      </Card>
+      <Text style={styles.disclaimer}>
+        {consistent
+          ? "La strategia è profittevole su TUTTI gli strumenti testati: buon segno di robustezza."
+          : "La strategia non funziona su tutti gli strumenti: attenzione all'overfitting su un singolo mercato."}
+      </Text>
+    </View>
+  );
+}
+
 function WFResults({ wf }: { wf: WFOutcome }) {
   const ok = wf.passRate >= 50;
   return (
@@ -879,6 +1008,8 @@ const styles = StyleSheet.create({
   cmpVal: { flex: 1, textAlign: "center", fontSize: 13, fontWeight: "800", color: colors.ink },
   cmpWin: { color: colors.green },
   cmpHead: { fontSize: 11, color: colors.black },
+  pdfBtn: { backgroundColor: "rgba(0,0,0,0.25)", paddingVertical: 4, paddingHorizontal: 10, borderWidth: 1, borderColor: colors.white },
+  pdfTxt: { color: colors.white, fontWeight: "800", fontSize: 12 },
   optHint: { ...t.small, color: colors.muted, marginTop: space.sm, lineHeight: 17 },
   warn: { ...t.small, color: colors.red, marginTop: space.sm, lineHeight: 18, fontWeight: "700" },
   tradesHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
