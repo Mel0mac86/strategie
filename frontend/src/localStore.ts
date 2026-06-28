@@ -11,7 +11,7 @@ import {
   uid,
 } from "@/localEngine";
 import { generateEa } from "@/localEa";
-import { generateAiStrategy } from "@/aiStrategy";
+import { generateAiStrategy, refineWithBacktest } from "@/aiStrategy";
 import { realValidate } from "@/realValidate";
 import type { Strategy, Trade } from "@/api";
 
@@ -40,9 +40,18 @@ export const localStore = {
     return s;
   },
   // AI gratuita lato client (endpoint LLM keyless), con fallback locale.
-  // La strategia proposta viene poi backtestata su dati reali.
+  // La strategia proposta viene backtestata su dati reali e poi affinata dall'AI.
   async generateAiStrategy(req: Record<string, any>): Promise<Strategy> {
-    const s = await withRealBacktest(await generateAiStrategy(req), req);
+    let s = await generateAiStrategy(req);
+    s = await withRealBacktest(s, req);
+    // Anello di affinamento: l'AI legge il backtest reale e migliora la strategia.
+    if (s.generated_by === "ai" && s.expected && String(s.expected.source).includes("reale")) {
+      try {
+        s = await refineWithBacktest(s, req, s.expected);
+      } catch {
+        /* mantieni la strategia non affinata */
+      }
+    }
     const list = (await storage.get<Strategy[]>(K_STRAT)) || [];
     list.unshift(s);
     await storage.set(K_STRAT, list);
