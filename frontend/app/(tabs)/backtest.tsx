@@ -71,6 +71,8 @@ export default function BacktestScreen() {
   const [rr, setRr] = useState("2");
   const [slMult, setSlMult] = useState("1.5");
   const [cost, setCost] = useState("5");
+  const [sizing, setSizing] = useState<"fixed" | "martingale" | "antimartingale">("fixed");
+  const [sizeMult, setSizeMult] = useState("2");
   const [source, setSource] = useState<"sim" | "csv">("sim");
   const [bars, setBars] = useState("1500");
   const [csv, setCsv] = useState("");
@@ -174,6 +176,9 @@ export default function BacktestScreen() {
       riskPct: Number(riskPct) || 1,
       maxDailyTrades: 5,
       costPctOfRisk: Number(cost) || 0,
+      sizing,
+      sizingMult: Number(sizeMult) || 2,
+      sizingMaxSteps: 3,
     };
   }
 
@@ -288,6 +293,35 @@ export default function BacktestScreen() {
           Approssima spread + commissioni sottratti a ogni trade (es. 5% = 0,05R di costo per
           operazione). Penalizza correttamente le strategie con molti trade.
         </Text>
+
+        <SectionLabel>Gestione size</SectionLabel>
+        <ChipRow
+          options={[
+            { label: "Fisso", value: "fixed" },
+            { label: "Martingala", value: "martingale" },
+            { label: "Antimartingala", value: "antimartingale" },
+          ]}
+          value={sizing}
+          onChange={(v) => setSizing(v as typeof sizing)}
+        />
+        {sizing !== "fixed" && (
+          <>
+            <SectionLabel>Moltiplicatore</SectionLabel>
+            <TextInput style={styles.input} value={sizeMult} onChangeText={setSizeMult} keyboardType="numeric" />
+          </>
+        )}
+        {sizing === "martingale" && (
+          <Text style={styles.warn}>
+            ⚠️ Martingala: raddoppia la size dopo ogni perdita per recuperare. Aumenta molto il
+            drawdown e può violare i limiti FTMO in pochi trade. Sconsigliata in challenge.
+          </Text>
+        )}
+        {sizing === "antimartingale" && (
+          <Text style={styles.hint}>
+            Antimartingala: aumenta la size dopo le vincite (cavalca le serie positive) e torna
+            alla base dopo una perdita. Più prudente della martingala.
+          </Text>
+        )}
       </Card>
 
       <Card>
@@ -562,6 +596,7 @@ const styles = StyleSheet.create({
   savedMeta: { ...t.label, color: colors.muted, marginTop: 2 },
   savedMetrics: { ...t.small, color: colors.ink, marginTop: 4 },
   optHint: { ...t.small, color: colors.muted, marginTop: space.sm, lineHeight: 17 },
+  warn: { ...t.small, color: colors.red, marginTop: space.sm, lineHeight: 18, fontWeight: "700" },
   optBestTitle: { ...t.h2, color: colors.black, flex: 1 },
   optParams: { ...t.body, color: colors.blue, fontWeight: "800", marginBottom: space.md },
   optSectionTitle: { ...t.label, color: colors.muted, textTransform: "uppercase", marginBottom: space.sm },

@@ -133,6 +133,34 @@ export default function StrategyDetail() {
         </View>
       </Card>
 
+      {/* Performance stimata (parametri auto-validati out-of-sample su dati simulati) */}
+      {s.expected ? (
+        <Card>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: space.sm }}>
+            <SectionLabel>Performance stimata</SectionLabel>
+            <Badge
+              text={s.expected.robust ? "SOLIDA" : "DA VALIDARE"}
+              bg={s.expected.robust ? colors.green : colors.yellow}
+            />
+          </View>
+          <Text style={styles.expParams}>
+            Parametri auto-validati: RR 1:{s.expected.rr} · Stop {s.expected.slAtrMult}× ATR
+          </Text>
+          <View style={styles.bento}>
+            <MiniCard label="Rendimento" value={`${s.expected.netPnlPct}%`} accent={s.expected.netPnlPct >= 0 ? colors.green : colors.red} />
+            <MiniCard label="Win rate" value={`${s.expected.winRate}%`} accent={colors.blue} />
+          </View>
+          <View style={styles.bento}>
+            <MiniCard label="Profit factor" value={String(s.expected.profitFactor)} accent={s.expected.profitFactor >= 1 ? colors.green : colors.red} />
+            <MiniCard label="Max drawdown" value={`${s.expected.maxDrawdownPct}%`} accent={s.expected.maxDrawdownPct > 10 ? colors.red : colors.yellow} />
+          </View>
+          <Text style={styles.expNote}>
+            ⚠️ Stima su dati simulati ({s.expected.trades} trade, out-of-sample). Non è una garanzia:
+            premi "Backtest" e carica un CSV reale per validarla sul mercato vero.
+          </Text>
+        </Card>
+      ) : null}
+
       {/* Regole di ingresso numerate */}
       <Card>
         <SectionLabel>Regole di Ingresso</SectionLabel>
@@ -395,6 +423,8 @@ const styles = StyleSheet.create({
   rmRow: { flexDirection: "row", justifyContent: "space-between", marginTop: space.md },
   rmItem: { ...t.small, color: colors.black },
   bold: { fontWeight: "900" },
+  expParams: { ...t.body, color: colors.blue, fontWeight: "800", marginBottom: space.md },
+  expNote: { ...t.small, color: colors.muted, marginTop: space.sm, lineHeight: 18 },
 
   numRow: { flexDirection: "row", alignItems: "flex-start", marginBottom: space.md },
   numBadge: {

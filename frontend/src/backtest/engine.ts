@@ -11,6 +11,9 @@ export type BacktestParams = {
   slAtrMult: number; // SL = ATR * mult
   maxDailyTrades: number;
   costPctOfRisk?: number; // costi (spread+commissioni) per trade, in % del rischio
+  sizing?: "fixed" | "martingale" | "antimartingale"; // gestione della size
+  sizingMult?: number; // moltiplicatore (default 2)
+  sizingMaxSteps?: number; // step massimi del moltiplicatore (default 3)
 };
 
 export type BTTrade = {
@@ -115,6 +118,13 @@ export function runBacktest(bars: Bar[], p: BacktestParams): BacktestResult {
     }
   }
 
+  // sizing progressivo (martingala / antimartingala)
+  const sizing = p.sizing ?? "fixed";
+  const sizeMult = p.sizingMult ?? 2;
+  const maxSteps = p.sizingMaxSteps ?? 3;
+  let consecWins = 0;
+  let consecLosses = 0;
+
   let i = warmup;
   while (i < n - 1) {
     // condizioni terminali della challenge: target raggiunto (pass) o limite violato (fail)
@@ -153,7 +163,11 @@ export function runBacktest(bars: Bar[], p: BacktestParams): BacktestResult {
       i++;
       continue;
     }
-    const riskAmount = balance * (p.riskPct / 100);
+    // moltiplicatore di size in base alla serie precedente
+    let mult = 1;
+    if (sizing === "martingale") mult = Math.pow(sizeMult, Math.min(consecLosses, maxSteps));
+    else if (sizing === "antimartingale") mult = Math.pow(sizeMult, Math.min(consecWins, maxSteps));
+    const riskAmount = balance * (p.riskPct / 100) * mult;
     const sl = sig === "long" ? entry - slDist : entry + slDist;
     const tp = sig === "long" ? entry + slDist * p.rr : entry - slDist * p.rr;
 
@@ -185,6 +199,9 @@ export function runBacktest(bars: Bar[], p: BacktestParams): BacktestResult {
     const pnl = riskAmount * rMult - cost;
     balance += pnl;
     tradesToday++;
+    // aggiorna le serie consecutive per il sizing progressivo
+    if (pnl > 0) { consecWins++; consecLosses = 0; }
+    else if (pnl < 0) { consecLosses++; consecWins = 0; }
     trades.push({ index: i + 1, dir: sig, entry, exit: exitPrice, rMultiple: rMult, pnl });
 
     // aggiorna picco/drawdown e FTMO

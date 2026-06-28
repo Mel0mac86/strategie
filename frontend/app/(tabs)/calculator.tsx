@@ -30,6 +30,19 @@ const ASSET_OPTIONS = [
   { label: "Crypto", value: "crypto" },
 ];
 
+// Preset capitale: include conti piccoli reali (€50…) oltre alle taglie FTMO.
+const ACCOUNT_PRESETS = [
+  { label: "50", value: "50" },
+  { label: "100", value: "100" },
+  { label: "500", value: "500" },
+  { label: "1k", value: "1000" },
+  { label: "10k", value: "10000" },
+  { label: "50k", value: "50000" },
+  { label: "100k", value: "100000" },
+];
+
+const MIN_LOT = 0.01; // lotto minimo tipico (broker standard)
+
 function parseNum(s: string): number {
   const n = parseFloat(s.replace(",", "."));
   return Number.isFinite(n) ? n : 0;
@@ -52,7 +65,13 @@ export default function CalculatorScreen() {
     const lots = denom > 0 ? riskAmount / denom : 0;
     const microLots = Math.round(lots * 100);
 
-    return { riskAmount, lots, microLots, pipValue };
+    // Analisi conto piccolo: rischio reale operando al lotto minimo (0,01).
+    const minLotRisk = MIN_LOT * pipValue * slN; // USD a rischio a 0,01 lotti
+    const minLotRiskPct = capitaleN > 0 ? (minLotRisk / capitaleN) * 100 : 0;
+    const belowMinLot = lots > 0 && lots < MIN_LOT; // posizione richiesta sotto il minimo
+    const isSmall = capitaleN > 0 && capitaleN < 2000;
+
+    return { riskAmount, lots, microLots, pipValue, minLotRisk, minLotRiskPct, belowMinLot, isSmall };
   }, [capitale, rischio, slPips, asset]);
 
   return (
@@ -63,9 +82,10 @@ export default function CalculatorScreen() {
       </Text>
 
       <Card>
-        <SectionLabel>Capitale (USD)</SectionLabel>
+        <SectionLabel>Capitale</SectionLabel>
+        <ChipRow options={ACCOUNT_PRESETS} value={capitale} onChange={setCapitale} />
         <TextInput
-          style={styles.input}
+          style={[styles.input, { marginTop: space.sm }]}
           value={capitale}
           onChangeText={setCapitale}
           keyboardType="numeric"
@@ -132,6 +152,33 @@ export default function CalculatorScreen() {
           />
         </View>
       </Card>
+
+      {(calc.isSmall || calc.belowMinLot) && (
+        <View style={[styles.smallCard, { borderColor: calc.belowMinLot ? colors.red : colors.yellow }]}>
+          <Text style={[styles.smallTitle, { color: calc.belowMinLot ? colors.red : colors.yellow }]}>
+            {calc.belowMinLot ? "⚠️ CONTO TROPPO PICCOLO" : "CONTI PICCOLI"}
+          </Text>
+          <Text style={styles.smallText}>
+            Al lotto minimo (0,01) rischi{" "}
+            <Text style={styles.smallBold}>${calc.minLotRisk.toFixed(2)}</Text> per trade ={" "}
+            <Text style={[styles.smallBold, { color: calc.minLotRiskPct > 5 ? colors.red : colors.green }]}>
+              {calc.minLotRiskPct.toFixed(1)}%
+            </Text>{" "}
+            del capitale.
+          </Text>
+          {calc.belowMinLot && (
+            <Text style={styles.smallText}>
+              Il lotto calcolato ({calc.lots.toFixed(3)}) è sotto il minimo: non puoi rischiare così
+              poco a 0,01 lotti.
+            </Text>
+          )}
+          <Text style={styles.smallText}>
+            Per un conto da {capitale}: usa un <Text style={styles.smallBold}>conto CENT</Text> (lotti
+            ×100 più piccoli), riduci lo <Text style={styles.smallBold}>Stop Loss</Text>, scegli asset
+            con pip value minore, e tieni il rischio ≤ 1–2%. Evita la martingala su conti piccoli.
+          </Text>
+        </View>
+      )}
 
       <Text style={styles.formula}>
         lotti = (capitale x rischio% / 100) / (SL pips x pip value per lotto)
@@ -207,4 +254,13 @@ const styles = StyleSheet.create({
     fontFamily: fonts.mono,
     marginTop: space.sm,
   },
+  smallCard: {
+    ...hardBorder,
+    backgroundColor: colors.white,
+    padding: space.lg,
+    marginTop: space.lg,
+  },
+  smallTitle: { ...t.h3, marginBottom: space.sm },
+  smallText: { ...t.small, color: colors.ink, lineHeight: 19, marginBottom: space.xs },
+  smallBold: { fontWeight: "900" },
 });

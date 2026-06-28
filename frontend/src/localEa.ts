@@ -120,6 +120,7 @@ export function generateEa(
   const summary = strategy?.summary || "";
   const rm = strategy?.risk_management || ({} as any);
   const minRr = Number(rm.min_rr ?? 2.0);
+  const slAtrMult = Number(strategy?.expected?.slAtrMult ?? 1.5);
   const maxDailyTrades = Number(rm.max_daily_trades ?? 3);
 
   const summaryLines = summary
@@ -151,7 +152,7 @@ ${rulesComment || "//   (vedi strategia)"}
 //==================  PARAMETRI  ===================================
 input double RiskPercent      = ${riskPct.toFixed(2)};   // Rischio % per trade
 input double MinRR            = ${minRr.toFixed(1)};      // Risk:Reward minimo (TP = SL * RR)
-input double SL_ATR_Mult      = 1.5;        // Stop loss = ATR * questo moltiplicatore
+input double SL_ATR_Mult      = ${slAtrMult.toFixed(1)};        // Stop loss = ATR * questo moltiplicatore
 input int    ATR_Period       = 14;         // Periodo ATR
 input ENUM_TIMEFRAMES TrendTF = ${trendTf};  // Timeframe per il filtro di trend (op. ${tf})
 input int    MaxDailyTrades   = ${maxDailyTrades};         // Numero massimo di trade al giorno

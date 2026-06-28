@@ -60,6 +60,17 @@ export type Strategy = {
   generated_by: "ai" | "local";
   score?: number | null;
   created_at: string;
+  expected?: {
+    source: string; // es. "simulato"
+    rr: number;
+    slAtrMult: number;
+    winRate: number;
+    profitFactor: number;
+    netPnlPct: number;
+    maxDrawdownPct: number;
+    trades: number;
+    robust: boolean;
+  };
 };
 
 export type Trade = {
