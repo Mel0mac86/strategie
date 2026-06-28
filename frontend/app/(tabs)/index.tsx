@@ -43,6 +43,7 @@ const STYLES = [
   { label: "Swing Trading", value: "swing" },
 ];
 const STRATEGIES = [
+  { label: "🏆 Migliore (auto)", value: "auto" },
   { label: "Trend + Pullback", value: "trend_pullback" },
   { label: "Breakout Sessione", value: "session_breakout" },
   { label: "XAU Scalper", value: "xau_scalper" },
@@ -64,7 +65,7 @@ export default function GeneratorScreen() {
   const [asset, setAsset] = useState("forex");
   const [risk, setRisk] = useState("medium");
   const [style, setStyle] = useState("intraday");
-  const [strategyType, setStrategyType] = useState("trend_pullback");
+  const [strategyType, setStrategyType] = useState("auto");
   const [timeframe, setTimeframe] = useState("H1");
   const [mode, setMode] = useState<"local" | "ai">("local");
   const [loading, setLoading] = useState(false);
@@ -145,6 +146,12 @@ export default function GeneratorScreen() {
 
         <SectionLabel>Tipo di strategia</SectionLabel>
         <ChipRow options={STRATEGIES} value={strategyType} onChange={setStrategyType} />
+        {strategyType === "auto" && (
+          <Text style={styles.autoHint}>
+            🏆 Testa tutte le strategie sui dati reali e propone quella più profittevole
+            (miglior win rate e profit factor, validata out-of-sample).
+          </Text>
+        )}
 
         <SectionLabel>Timeframe</SectionLabel>
         <ChipRow options={TIMEFRAMES} value={timeframe} onChange={setTimeframe} />
@@ -205,5 +212,6 @@ const styles = StyleSheet.create({
   modeTitle: { fontSize: 14, fontWeight: "800" },
   modeSub: { fontSize: 11, fontWeight: "600", marginTop: 2 },
   aiHint: { ...t.small, color: colors.blue, marginBottom: space.lg, lineHeight: 18 },
+  autoHint: { ...t.small, color: colors.green, marginTop: space.sm, lineHeight: 18, fontWeight: "600" },
   footnote: { ...t.small, color: colors.muted, textAlign: "center", marginTop: space.md },
 });
