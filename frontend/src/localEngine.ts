@@ -4,6 +4,8 @@
  * sull'iPhone come PWA, senza backend.
  */
 import type { Strategy, RiskManagement, FtmoLimits } from "@/api";
+import { generateBars } from "@/backtest/data";
+import { optimize } from "@/backtest/optimizer";
 
 // ---------------- FTMO ----------------
 const MAX_DAILY = 0.05;
@@ -152,17 +154,52 @@ export function buildLocalStrategy(req: Record<string, any>): Strategy {
     "Lotti = (Capitale × Rischio%) / (SL_pips × Valore_pip_per_lotto)\n" +
     `Es: (${account.toLocaleString("it-IT")} × ${(riskPct / 100).toFixed(3)}) / (20 × 10) = ${lots} lotti`;
 
+  // Validazione: ottimizza RR/SL su uno storico simulato per asset/timeframe scelti
+  // e allega le metriche attese (out-of-sample). È una STIMA, non una garanzia:
+  // da validare con dati reali (CSV) nella schermata Backtest.
+  let expected: Strategy["expected"] | undefined;
+  let bestRr = stype !== "mean_reversion" ? 2.0 : 1.5;
+  let bestSl = 1.5;
+  try {
+    const tf = (req.timeframe as string) || "H1";
+    const simBars = generateBars(asset, tf, 2500);
+    const out = optimize(
+      simBars,
+      { accountSize: account, phase, riskPct, maxDailyTrades, costPctOfRisk: 5 },
+      { strategies: [stype] }
+    );
+    if (out.best) {
+      bestRr = out.best.config.rr;
+      bestSl = out.best.config.slAtrMult;
+      const te = out.best.test;
+      expected = {
+        source: "simulato",
+        rr: bestRr,
+        slAtrMult: bestSl,
+        winRate: te.winRate,
+        profitFactor: te.profitFactor,
+        netPnlPct: te.netPnlPct,
+        maxDrawdownPct: te.maxDrawdownPct,
+        trades: te.trades,
+        robust: out.best.robust,
+      };
+    }
+  } catch {
+    /* fallback ai parametri di default */
+  }
+
   const risk_management: RiskManagement = {
     risk_per_trade_pct: riskPct,
     max_risk_per_trade_usd: maxRiskUsd,
     max_daily_loss_usd: ftmo.max_daily_loss,
     max_overall_loss_usd: ftmo.max_overall_loss,
     max_daily_trades: maxDailyTrades,
-    min_rr: stype !== "mean_reversion" ? 2.0 : 1.5,
+    min_rr: bestRr,
     lot_size_formula: lotFormula,
   } as RiskManagement;
 
   return {
+    expected,
     id: uid(),
     title: `${stypeLabel} · ${styleLabel} · ${assetLabel.split(" ")[0]}`,
     summary:
