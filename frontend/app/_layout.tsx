@@ -3,6 +3,7 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ScrollView, Text, View } from "react-native";
 import { colors, space, type as t } from "@/theme";
+import { Onboarding } from "@/components/Onboarding";
 
 /**
  * Mostra l'errore invece di una pagina bianca se un componente lancia un'eccezione.
@@ -40,6 +41,7 @@ export default function RootLayout() {
           options={{ title: "Strategia", headerBackTitle: "Indietro" }}
         />
       </Stack>
+      <Onboarding />
     </SafeAreaProvider>
   );
 }
