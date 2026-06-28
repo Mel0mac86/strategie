@@ -12,7 +12,7 @@ import {
 } from "@/localEngine";
 import { generateEa } from "@/localEa";
 import { generateAiStrategy, refineWithBacktest } from "@/aiStrategy";
-import { realValidate } from "@/realValidate";
+import { realValidate, findBestStrategy } from "@/realValidate";
 import type { Strategy, Trade } from "@/api";
 
 /** Sovrascrive le metriche attese con un backtest su dati REALI, se disponibili. */
@@ -25,6 +25,23 @@ async function withRealBacktest(s: Strategy, req: Record<string, any>): Promise<
   return s;
 }
 
+/**
+ * Se strategy_type === "auto", trova la strategia più profittevole (miglior WR/PF)
+ * su dati reali e restituisce la richiesta risolta + le metriche attese.
+ */
+async function resolveBest(
+  req: Record<string, any>
+): Promise<{ req: Record<string, any>; expected?: NonNullable<Strategy["expected"]>; minRr?: number }> {
+  if ((req.strategy_type || "") !== "auto") return { req };
+  const best = await findBestStrategy(req);
+  if (!best) return { req: { ...req, strategy_type: "trend_pullback" } };
+  return {
+    req: { ...req, strategy_type: best.config.strategyType },
+    expected: best.expected,
+    minRr: best.config.rr,
+  };
+}
+
 const K_STRAT = "store:strategies";
 const K_TRADES = "store:trades";
 const K_CHALLENGE = "store:challenge";
@@ -33,21 +50,34 @@ const K_CHALLENGES = "store:challenges";
 export const localStore = {
   // -------- Strategie --------
   async generateStrategy(req: Record<string, any>): Promise<Strategy> {
-    const s = await withRealBacktest(buildLocalStrategy(req), req);
+    const r = await resolveBest(req);
+    let s = buildLocalStrategy(r.req);
+    if (r.expected) {
+      s.expected = r.expected;
+      s.risk_management = { ...s.risk_management, min_rr: r.minRr! };
+    } else {
+      s = await withRealBacktest(s, r.req);
+    }
     const list = (await storage.get<Strategy[]>(K_STRAT)) || [];
     list.unshift(s);
     await storage.set(K_STRAT, list);
     return s;
   },
   // AI gratuita lato client (endpoint LLM keyless), con fallback locale.
-  // La strategia proposta viene backtestata su dati reali e poi affinata dall'AI.
+  // In modalità "auto" propone la strategia più profittevole (miglior WR/PF) su dati reali.
   async generateAiStrategy(req: Record<string, any>): Promise<Strategy> {
-    let s = await generateAiStrategy(req);
-    s = await withRealBacktest(s, req);
+    const r = await resolveBest(req);
+    let s = await generateAiStrategy(r.req);
+    if (r.expected) {
+      s.expected = r.expected;
+      s.risk_management = { ...s.risk_management, min_rr: r.minRr! };
+    } else {
+      s = await withRealBacktest(s, r.req);
+    }
     // Anello di affinamento: l'AI legge il backtest reale e migliora la strategia.
     if (s.generated_by === "ai" && s.expected && String(s.expected.source).includes("reale")) {
       try {
-        s = await refineWithBacktest(s, req, s.expected);
+        s = await refineWithBacktest(s, r.req, s.expected);
       } catch {
         /* mantieni la strategia non affinata */
       }
