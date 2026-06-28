@@ -15,9 +15,12 @@ import {
 } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system";
 import { api, Trade, TradeStats } from "@/api";
 import { Button, ChipRow, SectionLabel, Stat, Badge } from "@/components/ui";
 import { colors, space, fonts, hardBorder, type as t } from "@/theme";
+import { parseMt4Trades } from "@/utils/mt4Import";
 
 const DIRECTIONS = [
   { label: "Long", value: "long" },
@@ -47,6 +50,12 @@ export default function JournalScreen() {
 
   const [modalVisible, setModalVisible] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Import MT4
+  const [importOpen, setImportOpen] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [importFile, setImportFile] = useState("");
+  const [importing, setImporting] = useState(false);
 
   // form
   const [asset, setAsset] = useState("");
@@ -95,6 +104,53 @@ export default function JournalScreen() {
     setPnl("");
     setRMultiple("");
     setNotes("");
+  };
+
+  const pickImportFile = async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: ["text/html", "text/csv", "text/plain", "application/vnd.ms-excel", "*/*"],
+        copyToCacheDirectory: true,
+      });
+      if (res.canceled || !res.assets?.length) return;
+      const a = res.assets[0];
+      let text = "";
+      if (Platform.OS === "web") {
+        text = await (await fetch(a.uri)).text();
+      } else {
+        text = await FileSystem.readAsStringAsync(a.uri);
+      }
+      setImportText(text);
+      setImportFile(a.name || "file");
+    } catch (e: any) {
+      Alert.alert("Errore", e?.message || "Impossibile leggere il file.");
+    }
+  };
+
+  const doImport = async () => {
+    const parsed = parseMt4Trades(importText);
+    if (!parsed.length) {
+      Alert.alert(
+        "Nessun trade trovato",
+        "Carica/incolla lo statement MT4 (Cronologia conto → Salva come Report dettagliato) o un CSV con colonne symbol/type/price/profit."
+      );
+      return;
+    }
+    setImporting(true);
+    try {
+      for (const tr of parsed) {
+        await api.createTrade(tr);
+      }
+      setImportOpen(false);
+      setImportText("");
+      setImportFile("");
+      await load();
+      Alert.alert("Import completato", `${parsed.length} trade importati nel journal.`);
+    } catch (e: any) {
+      Alert.alert("Errore", e?.message || "Import non riuscito.");
+    } finally {
+      setImporting(false);
+    }
   };
 
   const openModal = () => {
@@ -242,7 +298,10 @@ export default function JournalScreen() {
     <View style={styles.screen}>
       <View style={styles.topBar}>
         <Text style={styles.title}>JOURNAL</Text>
-        <Button title="+ Nuovo Trade" onPress={openModal} small />
+        <View style={{ flexDirection: "row", gap: space.sm }}>
+          <Button title="Importa MT4" variant="secondary" onPress={() => setImportOpen(true)} small />
+          <Button title="+ Nuovo" onPress={openModal} small />
+        </View>
       </View>
 
       {renderStats()}
@@ -391,6 +450,40 @@ export default function JournalScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      <Modal visible={importOpen} transparent animationType="slide" onRequestClose={() => setImportOpen(false)}>
+        <Pressable style={styles.backdrop} onPress={() => setImportOpen(false)}>
+          <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.handle} />
+            <Text style={styles.modalTitle}>IMPORTA TRADE DA MT4</Text>
+            <Text style={styles.importHint}>
+              In MT4: scheda Cronologia conto → click destro → "Salva come Report dettagliato"
+              (HTML), poi carica il file qui. Funziona anche con un CSV (symbol, type, price,
+              profit…).
+            </Text>
+            <Button title="📂 Carica file (HTML/CSV)" variant="secondary" onPress={pickImportFile} />
+            {importFile ? <Text style={styles.importFile}>✓ {importFile}</Text> : null}
+            <View style={{ height: space.sm }} />
+            <SectionLabel>…oppure incolla qui</SectionLabel>
+            <TextInput
+              style={styles.importInput}
+              value={importText}
+              onChangeText={(v) => { setImportText(v); if (importFile) setImportFile(""); }}
+              multiline
+              placeholder="Incolla lo statement MT4 o il CSV dei trade chiusi"
+              placeholderTextColor={colors.muted}
+            />
+            <View style={{ height: space.md }} />
+            <Button
+              title={importing ? "Importazione..." : "Importa nel journal"}
+              variant="success"
+              onPress={doImport}
+              loading={importing}
+            />
+            <Button title="Annulla" variant="secondary" onPress={() => setImportOpen(false)} style={{ marginTop: space.sm }} />
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -524,6 +617,14 @@ const styles = StyleSheet.create({
     ...t.h2,
     color: colors.black,
     marginBottom: space.lg,
+  },
+  handle: { width: 44, height: 4, backgroundColor: colors.black, alignSelf: "center", marginBottom: space.md },
+  modalTitle: { ...t.h2, color: colors.black, marginBottom: space.sm },
+  importHint: { ...t.small, color: colors.muted, marginBottom: space.md, lineHeight: 18 },
+  importFile: { ...t.small, color: colors.green, fontWeight: "700", marginTop: space.sm },
+  importInput: {
+    ...hardBorder, backgroundColor: colors.white, color: colors.black, height: 120,
+    textAlignVertical: "top", padding: space.md, fontFamily: fonts.mono, fontSize: 12,
   },
   input: {
     ...hardBorder,
